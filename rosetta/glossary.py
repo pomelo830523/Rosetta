@@ -77,6 +77,12 @@ def match_entries(query: str, entries: list[GlossaryEntry]) -> list[GlossaryEntr
     return matched
 
 
+def matched_candidates(query: str, entry: GlossaryEntry) -> list[str]:
+    """回傳 entry 在 query 中實際命中的 term/alias 字串(S1 歧義判斷用)。"""
+    q_lower = query.strip().lower()
+    return [c for c in (entry.term, *entry.all_aliases()) if c and c.lower() in q_lower]
+
+
 def split_identifier(identifier: str) -> set[str]:
     """把 IT 識別字拆成小寫單詞:HouseService.calculateScore → {house, service, calculate, score}。"""
     return {w.lower() for w in _WORD_RE.findall(identifier) if len(w) >= 3}

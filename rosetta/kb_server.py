@@ -39,7 +39,14 @@ _INSTRUCTIONS = f"""本 server 是唯讀的「系統邏輯知識庫」,服務多
 5. 權重、規則、門檻、連線這類「現值」必查 query_db_config / get_app_config,
    不得引用程式碼或 migration 裡的舊值。
 6. 回答一律附依據(app 名 + 檔名:行號 / config key / DB 現值),
-   用使用者提問的語言作答;查不到就明說,不要編造。"""
+   用使用者提問的語言作答;查不到就明說,不要編造。
+7. 遇到歧義先向使用者做「選項式釐清」再繼續查。歧義訊號包括:
+   (a) 工具回傳標註「歧義訊號」(lookup_term 命中多個概念、search_code 結果
+       分散或無結果附選項素材);
+   (b) query_db_config 回傳的資料中,符合使用者所指對象的有**多筆**
+       (如同名房屋)——以識別欄位(ID/名稱/樓層/價格等)列選項請使用者確認是哪一筆,
+       不要自行挑一筆作答。
+   選項一律取自工具回傳的真實候選,最多問一次、1~2 個問題;問題清楚時不反問。"""
 
 mcp = FastMCP(
     _config.server_name,
@@ -71,6 +78,28 @@ def list_apps() -> str:
     return f"共 {len(config.apps)} 個 AP:\n" + "\n".join(lines)
 
 
+def _independent_concepts(query: str, matched: list) -> list:
+    """S1 輔助:去除「命中字串被其他條目更長命中包含」的條目。
+
+    例:「不含車位單價怎麼算」同時命中「不含車位單價」與「車位」,
+    但「車位」只是前者的子字串,不構成獨立歧義。
+    """
+    longest = {
+        e.term: max(glossary.matched_candidates(query, e), key=len)
+        for e in matched
+    }
+    independent = []
+    for entry in matched:
+        mine = longest[entry.term].lower()
+        covered = any(
+            mine != other.lower() and mine in other.lower()
+            for other in longest.values()
+        )
+        if not covered:
+            independent.append(entry)
+    return independent
+
+
 @mcp.tool()
 def lookup_term(query: str, app: str = "") -> str:
     """查指定 AP 的「業務用語 ↔ IT 用語」對照表。輸入使用者口語(如「權重」「被刷掉」),
@@ -88,7 +117,14 @@ def lookup_term(query: str, app: str = "") -> str:
     if not matched:
         all_terms = "、".join(e.term for e in entries)
         return f"沒有符合「{query}」的對照條目。已收錄的業務用語:{all_terms}"
-    return glossary.format_entries(matched)
+    hint = ""
+    concepts = _independent_concepts(query, matched)
+    if len(concepts) >= 2:
+        names = "、".join(e.term for e in concepts)
+        hint = (f"(歧義訊號:「{query}」命中 {len(concepts)} 個不同概念——{names}。"
+                "若無法從使用者的問題判斷是哪一個,請先以這些概念為選項向使用者確認,"
+                "再繼續檢索;若問題本身已可區分則直接繼續。)\n\n")
+    return hint + glossary.format_entries(matched)
 
 
 def _engine(ctx: kb_config.AppContext) -> str:
@@ -133,13 +169,44 @@ def _read_body(file_path: str, start_line: int, end_line: int,
     return code_search.truncate_body("\n".join(lines[start:end]))
 
 
+_SCATTER_DELTA = 0.03      # S2:top1 − top3 分數差小於此值視為「沒有明確贏家」
+_SCATTER_MIN_CLASSES = 3   # S2:命中散在 ≥ 此數量的 class 才視為分散
+
+
+def _scatter_note(hits) -> str:
+    """S2 檢索分散訊號(SPEC §4.8):分數平坦且命中散在多個 class 時建議釐清。"""
+    if len(hits) < 3 or hits[0].score - hits[2].score >= _SCATTER_DELTA:
+        return ""
+    classes: list[str] = []
+    for h in hits:
+        parts = h.qualified_name.split("::")
+        cls = parts[-2] if len(parts) >= 2 else h.file_path
+        if cls not in classes:
+            classes.append(cls)
+    if len(classes) < _SCATTER_MIN_CLASSES:
+        return ""
+    return (f"\n\n(歧義訊號:結果分散——前幾名分數接近且散在 {len(classes)} 個模組:"
+            f"{'、'.join(classes[:5])}。若不確定使用者要問哪個功能,"
+            "請先以這些模組對應的功能為選項向使用者釐清。)")
+
+
+def _glossary_domain_hint(ctx: kb_config.AppContext) -> str:
+    """S3 檢索空手訊號(SPEC §4.8):附該 AP 的業務概念清單當釐清選項素材。"""
+    entries = glossary.load_glossary(ctx.glossary_path)
+    if not entries:
+        return ""
+    terms = "、".join(e.term for e in entries)
+    return (f"\n(選項素材:此 AP 已收錄的業務概念——{terms}。"
+            "可挑貼近使用者問題的幾個概念為選項,向使用者確認方向後再查。)")
+
+
 def _search_semantic(query: str, top_k: int, extra_terms, matched_entries,
                      ctx: kb_config.AppContext, include_call_chain: bool) -> str:
     import semantic_search
     hits = semantic_search.search(query, top_k, extra_terms, ctx)
     if not hits:
         return ("語意索引無足夠相關的結果。可先用 lookup_term 確認業務用語,"
-                "或以 IT 詞重查。")
+                "或以 IT 詞重查。" + _glossary_domain_hint(ctx))
     parts = [f"(app={ctx.name},engine=semantic,{semantic_search.index_info(ctx)})"]
     if matched_entries:
         expanded = "、".join(f"{e.term}→{'/'.join(e.it_terms[:3])}" for e in matched_entries)
@@ -154,14 +221,15 @@ def _search_semantic(query: str, top_k: int, extra_terms, matched_entries,
             if chain:
                 block += f"\n呼叫鏈:{chain}"
         parts.append(block)
-    return "\n\n".join(parts)
+    return "\n\n".join(parts) + _scatter_note(hits)
 
 
 def _search_grep(query: str, top_k: int, extra_terms, matched_entries,
                  ctx: kb_config.AppContext) -> str:
     results = code_search.search(query, top_k, extra_terms, ctx)
     if not results:
-        return "找不到相關程式碼。可先用 lookup_term 確認業務用語的 IT 對照,再以 IT 詞重查。"
+        return ("找不到相關程式碼。可先用 lookup_term 確認業務用語的 IT 對照,"
+                "再以 IT 詞重查。" + _glossary_domain_hint(ctx))
     parts = [f"(app={ctx.name},engine=grep,全掃描 fallback)"]
     if matched_entries:
         hits = "、".join(f"{e.term}→{'/'.join(e.it_terms[:3])}" for e in matched_entries)
@@ -297,6 +365,8 @@ def query_db_config(table: str, limit: int = 50, app: str = "") -> str:
     權重、規則門檻這類邏輯存在 DB,程式碼與 migration 都看不到現值——
     問「權重是多少」「篩選門檻是多少」必須用本工具,不要從程式碼推測。
     白名單以外的表(含個資敏感表)一律拒絕。
+    回傳中若有多筆符合使用者所指的對象(如同名資料),先以識別欄位列選項
+    向使用者確認是哪一筆,不要自行挑一筆作答。
     """
     ctx, error = _resolve(app)
     if ctx is None:

@@ -155,6 +155,33 @@ def main() -> None:
     target_path = (root / "../outside.txt").resolve()
     check("目錄穿越被擋", root not in target_path.parents and target_path != root)
 
+    # 9. 歧義釐清訊號(SPEC §4.8:S1 多義 / S2 分散 / S3 空手)
+    import kb_server
+    from semantic_search import SemanticHit
+
+    out = kb_server.lookup_term("戶梯比和管理費的規則", app="besthouse")
+    check("S1:多個獨立概念出現歧義訊號", "歧義訊號" in out and "電梯" in out and "管理費" in out)
+    out = kb_server.lookup_term("竹科悅揚不含車位單價是怎麼計算出來的", app="besthouse")
+    check("S1:子字串命中(車位⊂不含車位單價)不誤觸發", "歧義訊號" not in out)
+
+    def hit(score: float, qualified_name: str) -> SemanticHit:
+        return SemanticHit(score=score, kind="method", name="x",
+                           qualified_name=qualified_name, file_path="f.java",
+                           start_line=1, end_line=2)
+
+    flat_scattered = [hit(0.50, "a::AService::m1"), hit(0.49, "b::BService::m2"),
+                      hit(0.48, "c::CService::m3")]
+    check("S2:分數平坦且散在 3 個 class 觸發", "歧義訊號" in kb_server._scatter_note(flat_scattered))
+    clear_winner = [hit(0.60, "a::AService::m1"), hit(0.50, "b::BService::m2"),
+                    hit(0.40, "c::CService::m3")]
+    check("S2:有明確贏家不觸發", kb_server._scatter_note(clear_winner) == "")
+    same_class = [hit(0.50, "a::AService::m1"), hit(0.49, "a::AService::m2"),
+                  hit(0.48, "a::AService::m3")]
+    check("S2:集中在同一 class 不觸發", kb_server._scatter_note(same_class) == "")
+
+    out = kb_server._search_grep("魔法蘑菇咒語吟唱", 3, set(), [], app)
+    check("S3:檢索空手附業務概念清單", "選項素材" in out and "篩選規則" in out)
+
     print(f"\n結果:{sum(results)}/{len(results)} 通過")
     sys.exit(0 if all(results) else 1)
 
