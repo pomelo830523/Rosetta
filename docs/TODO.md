@@ -37,3 +37,20 @@
 - [ ] eval 增模糊題 5 題(如「分數怎麼算」「為什麼被刷掉」「竹科悅揚單價」),
       E2E 驗:是否先釐清、選項是否來自 KB 候選、釐清後是否命中正確來源
 - [ ] 既有清晰 10 題重跑:誤觸發反問 ≤ 1/10;超標則調 S2 門檻(Δ、模組數)
+
+## Phase 9 — query_db_config 受限過濾 ✅(2026-07-05,SPEC §4.4)
+
+實作(rosetta/db_config.py + kb_server.py):
+- [x] 新增選填參數 filter_column / filter_op(eq|contains)/ filter_value;
+      三者皆空 = 原整表行為(向下相容)
+- [x] 欄位名驗證:連線後以 driver metadata 取該表實際欄位(不分大小寫比對);
+      不存在時拒絕並回可用欄位清單(供 Claude 自我修正)
+- [x] 值一律參數繫結;contains 包 %value% 並跳脫 % _ \(LIKE 僅字面比對)
+- [x] Oracle 分支同步(FETCH FIRST + :v 繫結 + ESCAPE;維持「未實測」標註)
+- [x] 截斷警示:回傳筆數 = limit 時尾註加警示(無過濾時也適用)
+- [x] tool docstring 更新:查特定對象時建議用 filter,與 S4 配合
+
+驗證:
+- [x] selftest 新增 7 項:欄位不存在/注入字串被拒/eq 命中 4 筆同名(不分大小寫)/
+      contains/未知 op/萬用字元跳脫/截斷警示 → 40/40;multi-AP 13/13 無回歸
+- [x] README 工具表、模板重產、server 重啟(tool 簽名變更)

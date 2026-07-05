@@ -16,7 +16,7 @@ Claude 讀當下真實的 code / config / DB 後回答並附依據。
 | `get_structure(symbol, app)` | callers / callees / 定義位置(codegraph 圖) |
 | `read_source(relative_path, app)` | 讀完整檔案(限該 AP 專案根內) |
 | `get_app_config(key_pattern, app)` | 查 `application*.yml`;敏感值遮罩 |
-| `query_db_config(table, limit, app)` | 查 DB 設定表現值;白名單 + SELECT only |
+| `query_db_config(table, limit, app, filter_column, filter_op, filter_value)` | 查 DB 設定表現值;白名單 + SELECT only;受限過濾(eq/contains,欄位名驗證、值繫結) |
 
 `app` 參數:單一 AP 時可省略。唯讀保證:不寫檔、不執行、DB 只 SELECT 白名單表、
 codegraph.db 以 read-only 開啟。

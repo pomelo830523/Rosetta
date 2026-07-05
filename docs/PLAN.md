@@ -51,6 +51,23 @@
 - selftest 新增 6 項(S1×2/S2×3/S3×1)→ 33/33 通過;multi-AP 13/13 無回歸。
 - 待辦:E2E 模糊題 5 題驗收;清晰 10 題誤觸發 ≤ 1/10(S2 的 Δ 門檻據此調校)。
 
+## Phase 9 — query_db_config 受限過濾 ✅(2026-07-05,SPEC §4.4)
+
+- 問題:原 SQL 固定 `SELECT * FROM {table} LIMIT 50`,**無 WHERE**——
+  過濾靠 Claude 讀回傳表格自行挑,表超過 50 筆後目標資料可能不在回傳範圍
+  (Phase 8 的 S4「同名多筆確認」在大表上也會失效)。
+- 作法(已實作):三個選填參數 `filter_column` / `filter_op` / `filter_value`,
+  「受限過濾」而非開放 WHERE——欄位名必須存在於該表實際 schema
+  (driver metadata 驗證,零人工維護,錯誤時列可用欄位供自我修正)、
+  運算子只有 `eq` / `contains` 兩個 enum、值一律參數繫結(contains 跳脫萬用字元)、
+  單一條件不做 AND/OR。三參數皆空 = 原行為,向下相容。
+  另補截斷警示:回傳筆數 = limit 時明示「結果可能不完整,可用 filter 縮小」。
+- 刻意不做:自由 WHERE 字串(注入面)、複合條件(複雜度)、分頁、
+  數值比較 lt/gt(場景未出現;分析型問題讓 Claude 整表撈回自行算)。
+- 實測:selftest 新增 7 項(欄位驗證/注入拒絕/eq 命中 4 筆同名/contains/
+  未知 op/萬用字元跳脫/截斷警示)→ 40/40;multi-AP 13/13 無回歸。
+  Oracle 分支同步實作,維持「未實測」標註。
+
 ## 風險
 
 | 風險 | 緩解 |

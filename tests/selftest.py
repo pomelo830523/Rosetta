@@ -182,6 +182,33 @@ def main() -> None:
     out = kb_server._search_grep("魔法蘑菇咒語吟唱", 3, set(), [], app)
     check("S3:檢索空手附業務概念清單", "選項素材" in out and "篩選規則" in out)
 
+    # 10. query_db_config 受限過濾(SPEC §4.4 Phase 9;需 MariaDB 啟動)
+    out = db_config.query_table("HOUSE", 50, app,
+                                filter_column="NO_SUCH_COL", filter_value="x")
+    if "失敗" in out:
+        check("受限過濾:DB 未啟動,整節略過(可接受)", "docker compose" in out)
+    else:
+        check("filter:欄位不存在被拒且列可用欄位",
+              "不存在" in out and "HOUSE_ID" in out)
+        out = db_config.query_table("HOUSE", 50, app,
+                                    filter_column="1=1 OR TRUE", filter_value="x")
+        check("filter:注入字串當欄位名被拒", "不存在" in out)
+        out = db_config.query_table("HOUSE", 50, app, filter_column="nickname",
+                                    filter_op="eq", filter_value="竹科悅揚")
+        check("filter:eq 命中同名多筆(欄位名不分大小寫)",
+              out.count("竹科悅揚") >= 4 and "富春居" not in out)
+        out = db_config.query_table("HOUSE", 50, app, filter_column="NICKNAME",
+                                    filter_op="contains", filter_value="富春居")
+        check("filter:contains 命中子字串", "富春居13F" in out and "竹科悅揚" not in out)
+        out = db_config.query_table("HOUSE", 50, app, filter_column="NICKNAME",
+                                    filter_op="between", filter_value="x")
+        check("filter:未知 filter_op 被拒", "filter_op" in out)
+        out = db_config.query_table("HOUSE", 50, app, filter_column="NICKNAME",
+                                    filter_op="contains", filter_value="100%中獎_特價\\")
+        check("filter:萬用字元跳脫(字面比對無命中)", "沒有符合" in out)
+        out = db_config.query_table("HOUSE", 2, app)
+        check("filter:達上限出現截斷警示", "結果可能不完整" in out)
+
     print(f"\n結果:{sum(results)}/{len(results)} 通過")
     sys.exit(0 if all(results) else 1)
 

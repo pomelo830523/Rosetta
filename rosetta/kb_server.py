@@ -359,19 +359,26 @@ def get_app_config(key_pattern: str = "", app: str = "") -> str:
 
 
 @mcp.tool()
-def query_db_config(table: str, limit: int = 50, app: str = "") -> str:
+def query_db_config(table: str, limit: int = 50, app: str = "",
+                    filter_column: str = "", filter_op: str = "eq",
+                    filter_value: str = "") -> str:
     """查詢指定 AP 的 DB 設定表「現值」(白名單表,見 list_apps 或錯誤訊息)。
 
     權重、規則門檻這類邏輯存在 DB,程式碼與 migration 都看不到現值——
     問「權重是多少」「篩選門檻是多少」必須用本工具,不要從程式碼推測。
     白名單以外的表(含個資敏感表)一律拒絕。
+
+    受限過濾:查特定對象(如某間房)時用 filter_column + filter_value 縮小範圍,
+    避免整表超過 limit 上限漏資料。filter_op:eq(精確)| contains(子字串)。
+    欄位名必須存在於該表(錯誤訊息會列可用欄位);單一條件,不支援 AND/OR。
     回傳中若有多筆符合使用者所指的對象(如同名資料),先以識別欄位列選項
-    向使用者確認是哪一筆,不要自行挑一筆作答。
+    向使用者確認是哪一筆,不要自行挑一筆作答;確認後可用主鍵 eq 精準取回。
     """
     ctx, error = _resolve(app)
     if ctx is None:
         return error
-    return db_config.query_table(table, limit, ctx)
+    return db_config.query_table(table, limit, ctx, filter_column=filter_column,
+                                 filter_op=filter_op, filter_value=filter_value)
 
 
 class _BearerTokenGuard:
