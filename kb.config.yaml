@@ -17,7 +17,7 @@ apps:
     glossary: glossary/besthouse.yaml
     db:
       driver: mariadb            # mariadb | oracle(oracle 需 python-oracledb,尚未實測)
-      table_whitelist: [RATING_DIMENSION, FILTER_RULE]
+      table_whitelist: [RATING_DIMENSION, FILTER_RULE, HOUSE]
       sensitive_tables:          # 刻意排除的表:給明確理由,而不是裝作不存在
         MEMBER: 含家庭成員個人權重(個資),已排除於查詢白名單。
 

@@ -255,4 +255,3 @@ embed_model: ""                # 空 = e5-large
 | 結構檢索 | codegraph(tree-sitter) | SCIP-Java / Spoon(型別感知,補 DI 邊) |
 | 索引更新 | 排程 index_all | CI on commit |
 | config 查詢 | 直讀 yml + MariaDB | config center / 各 AP DB 唯讀帳號;Oracle 驗證 |
-| 部署 | 內網 HTTP + token | TLS、SSO、管理員統一發佈 Connector |

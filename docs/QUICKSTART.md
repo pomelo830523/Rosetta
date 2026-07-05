@@ -110,6 +110,14 @@ $env:KB_AUTH_TOKEN = "<team-token>"    # 不設 = 無認證,僅限信任內網
 config 題密碼有遮罩、模糊問法路由到對的 AP。通過後把 Connector URL +
 USER-GUIDE.md 發給使用者(Team/Enterprise 由管理員後台統一新增)。
 
+### 6. 在 Claude Code 註冊 MCP
+
+```powershell
+claude mcp add --transport http rosetta http://localhost:8600/mcp --header "Authorization: Bearer <team-token>"
+```
+
+註冊後重啟 Claude Code,輸入 `/mcp` 看到 `rosetta` 且狀態 connected 即成功。
+
 ## 常見陷阱
 
 1. **MCP `-32000`**:設定寫了裸 `python` 被解析到沒裝套件的 Python。
