@@ -1,8 +1,9 @@
 """語意檢索:ANN top-k + glossary/精確 identifier boost(混合排序)。
 
 查詢期只做:query 向量化 + 內積 + 少量字面 boost —— 不掃 repo。
-向量庫為 numpy 單檔暴力內積:BestHouse 規模(約 1k symbols)< 1ms;
-規模化時換 hnswlib/Qdrant,本模組介面不變(SPEC §4.5)。
+向量庫為 numpy 單檔暴力內積:BestHouse(約 1k symbols)< 1ms;
+一隊一台、百萬行以內(~10 萬 symbols)仍 < 0.1s,現行夠用。
+超出定位(千萬行/高並發)才換 hnswlib/Qdrant,本模組介面不變(SPEC §4.5)。
 """
 
 import json
@@ -59,7 +60,7 @@ def _load(app: AppContext) -> dict:
     return cache
 
 
-def _query_words(query: str) -> set[str]:
+def query_words(query: str) -> set[str]:
     """使用者親打的英數詞(≥3 字元),用於精確命中 boost。"""
     word = ""
     words = set()
@@ -92,7 +93,7 @@ def search(query: str, top_k: int, extra_terms: set[str],
     query_vec = embed_texts([query], kind="query", model_name=state.get("model"))[0]
     scores = vectors @ query_vec  # 向量已 L2 正規化,內積即 cosine
 
-    typed_words = _query_words(query)
+    typed_words = query_words(query)
     hits: list[SemanticHit] = []
     # 先取語意分數前段的候選再做字面 boost(避免全表字面比對)
     candidate_idx = np.argsort(scores)[::-1][: max(top_k * 10, 50)]

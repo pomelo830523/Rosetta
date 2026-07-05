@@ -5,7 +5,7 @@
 + annotation(@Table/@Column 含 DB 欄位名)+ glossary 反向注入。
 
 增量:以 codegraph files 表的 content_hash 判斷;model 或 glossary 變更則全量重建。
-用法:.venv\\Scripts\\python.exe semantic_index.py [--app NAME] [--rebuild]
+用法:.venv\\Scripts\\python.exe -X utf8 rosetta\\semantic_index.py [--app NAME] [--rebuild]
 (--app 省略時:設定檔只有一個 AP 就用它,否則列出可選的 AP)
 """
 
@@ -55,7 +55,7 @@ def _extract_context_lines(lines: list[str], start_line: int) -> tuple[list[str]
     return annotations, comments
 
 
-def _glossary_injection(app: AppContext) -> dict[str, str]:
+def glossary_injection(app: AppContext) -> dict[str, str]:
     """{normalized_it_segment: 業務詞文字}。symbol 名相符時把業務用語注入其 NL 訊號。"""
     injection: dict[str, str] = {}
     for entry in glossary.load_glossary(app.glossary_path):
@@ -141,7 +141,7 @@ def build(app: AppContext, rebuild: bool = False) -> str:
             return f"[{app.name}] 索引已是最新({len(old_meta)} symbols,model={model_name})。"
 
     symbols = [s for s in graph_db.iter_symbols(app) if s.file_path.startswith(prefixes)]
-    injection = _glossary_injection(app)
+    injection = glossary_injection(app)
     file_cache: dict[str, list[str]] = {}
 
     def lines_of(rel_path: str) -> list[str]:

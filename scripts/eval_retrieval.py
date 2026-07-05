@@ -4,13 +4,15 @@
 評分含 production 同款字面 boost(semantic_search 的混合排序邏輯)。
 輸出 markdown 對比表 → eval/RESULT.md。
 
-用法:.venv\\Scripts\\python.exe eval_retrieval.py
+用法:.venv\\Scripts\\python.exe -X utf8 scripts\\eval_retrieval.py
 注意:bge-m3 不在本版 fastembed 支援清單(SPEC 原候選),已記入結果檔限制說明。
 """
 
 from pathlib import Path
 import sys
 import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rosetta"))
 
 import numpy as np
 import yaml
@@ -20,7 +22,7 @@ import graph_db
 import kb_config
 import semantic_index
 from semantic_common import embed_texts
-from semantic_search import _query_words, literal_boost
+from semantic_search import literal_boost, query_words
 
 MODELS = (
     "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
@@ -29,22 +31,17 @@ MODELS = (
 )
 LANGS = ("zh", "en", "de", "ja")
 TOP_K = 3
-EVAL_DIR = Path(__file__).parent / "eval"
+EVAL_DIR = kb_config.ROOT_DIR / "eval"
 
 
 def load_questions() -> list[dict]:
-    base = yaml.safe_load((EVAL_DIR / "questions.yaml").read_text(encoding="utf-8"))
-    ja_path = EVAL_DIR / "questions.ja.yaml"
-    if ja_path.is_file():
-        ja_map = {q["id"]: q["ja"] for q in yaml.safe_load(ja_path.read_text(encoding="utf-8"))}
-        for q in base:
-            q["ja"] = ja_map.get(q["id"], "")
-    return base
+    # 單一題庫檔:zh/en/de/ja 皆內嵌於 questions.yaml。
+    return yaml.safe_load((EVAL_DIR / "questions.yaml").read_text(encoding="utf-8"))
 
 
 def build_corpus(app: kb_config.AppContext) -> tuple[list[dict], list[str]]:
     """跟 semantic_index 相同的 NL 訊號組裝(單一事實來源:直接呼叫其函式)。"""
-    injection = semantic_index._glossary_injection(app)
+    injection = semantic_index.glossary_injection(app)
     file_cache: dict[str, list[str]] = {}
     meta, texts = [], []
     for sym in graph_db.iter_symbols(app):
@@ -65,7 +62,7 @@ def rank(query: str, meta: list[dict], vectors: np.ndarray, model: str,
     qv = embed_texts([query], kind="query", model_name=model)[0]
     scores = vectors @ qv
     extra_terms, _ = glossary.expand_query(query, app.glossary_path)
-    typed = _query_words(query)
+    typed = query_words(query)
     candidates = np.argsort(scores)[::-1][: max(TOP_K * 10, 50)]
     rescored = []
     for i in candidates:

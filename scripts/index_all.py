@@ -3,7 +3,7 @@
 首次 codegraph init 是一次性手動步驟(QUICKSTART);本腳本只對已建圖的 AP
 自動 sync。語意索引以 content-hash 增量,已最新的 AP 幾乎零成本,可掛排程/CI。
 
-用法:.venv\\Scripts\\python.exe index_all.py [--pull] [--rebuild] [--app NAME]
+用法:.venv\\Scripts\\python.exe -X utf8 scripts\\index_all.py [--pull] [--rebuild] [--app NAME]
   --pull     先在各 AP 的 repo_root 跑 git pull(伺服器集中部署用)
   --rebuild  全量重建(換 model / 索引壞掉時)
   --app      只跑指定 AP(省略 = 全部)
@@ -12,6 +12,9 @@
 import shutil
 import subprocess
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rosetta"))
 
 import kb_config
 import semantic_index

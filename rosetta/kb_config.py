@@ -2,10 +2,11 @@
 
 一份 server code + 一份設定列 N 個 AP;所有 tools 以 `app` 參數選取 AppContext。
 路徑解析規則:
-  - repo_root:相對於本檔所在目錄(kb server 目錄)解析
+  - repo_root:相對於 kb server 專案根(ROOT_DIR,rosetta/ 的上一層)解析
   - search_dirs / resources_dir / entity_dir:相對於 repo_root
-  - glossary:相對於 kb server 目錄(對照表跟著 kb server 進版控,不放 AP repo)
-設定檔以 mtime 快取失效:編輯 kb.config.yaml 後不需重啟 server。
+  - glossary:相對於 config/ 目錄(對照表跟著 kb server 進版控,不放 AP repo)
+設定檔以 mtime 快取失效:編輯 kb.config.yaml 後不需重啟 server
+(但 MCP instructions 內的 AP 清單是啟動時組好的,新增/移除 AP 需重啟)。
 """
 
 from dataclasses import dataclass
@@ -13,9 +14,10 @@ from pathlib import Path
 
 import yaml
 
-KB_DIR = Path(__file__).parent
-CONFIG_PATH = KB_DIR / "kb.config.yaml"
-SEMANTIC_ROOT = KB_DIR / ".semantic"
+ROOT_DIR = Path(__file__).resolve().parent.parent  # kb server 專案根
+CONFIG_DIR = ROOT_DIR / "config"
+CONFIG_PATH = CONFIG_DIR / "kb.config.yaml"
+SEMANTIC_ROOT = ROOT_DIR / ".semantic"
 
 VALID_ENGINES = ("auto", "semantic", "grep")
 VALID_DRIVERS = ("mariadb", "oracle")
@@ -106,7 +108,7 @@ def _parse_app(raw: dict, defaults: dict) -> AppContext:
     if not raw.get("repo_root"):
         raise ValueError(f"app「{name}」缺少 repo_root。")
 
-    repo_root = (KB_DIR / str(raw["repo_root"])).resolve()
+    repo_root = (ROOT_DIR / str(raw["repo_root"])).resolve()
     engine = str(raw.get("engine") or defaults.get("engine") or "auto").lower()
     if engine not in VALID_ENGINES:
         raise ValueError(f"app「{name}」的 engine 必須是 {VALID_ENGINES},收到:{engine}")
@@ -119,7 +121,7 @@ def _parse_app(raw: dict, defaults: dict) -> AppContext:
         search_dirs=tuple(repo_root / str(d) for d in (raw.get("search_dirs") or [])),
         resources_dir=repo_root / str(raw.get("resources_dir") or ""),
         entity_dir=(repo_root / str(entity_dir_raw)) if entity_dir_raw else None,
-        glossary_path=(KB_DIR / str(raw.get("glossary") or f"glossary/{name}.yaml")).resolve(),
+        glossary_path=(CONFIG_DIR / str(raw.get("glossary") or f"glossary/{name}.yaml")).resolve(),
         db=_parse_db(raw.get("db") or {}, name),
         engine=engine,
         embed_model=str(raw.get("embed_model") or defaults.get("embed_model") or ""),

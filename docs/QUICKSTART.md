@@ -1,7 +1,7 @@
 # QUICKSTART — 團隊架設指南
 
-> 對象:幫團隊架 NL Query KB 的工程師/管理員。使用者端說明:[USER-GUIDE.md](USER-GUIDE.md)。
-> 架構規格:[SPEC.md](SPEC.md)。模板:`nl-query-kb-template/`(由 `make_template.ps1` 產生)。
+> 對象:幫團隊架 NL Query KB 的工程師/管理員。
+> 架構規格:[SPEC.md](SPEC.md)。模板:`nl-query-kb-template/`(由 `scripts/make_template.ps1` 產生)。
 
 ## 原則
 
@@ -18,8 +18,8 @@
 |---|---|
 | 設定區塊(路徑、DB 白名單) | 10 分鐘 |
 | DB 唯讀帳號(只給白名單表 SELECT) | 看 DBA |
-| 對照表 `glossary/<app>.yaml` | 骨架起步,缺詞再補 |
-| 索引 | `index_all.py` 批次,50 AP 排一晚 |
+| 對照表 `config/glossary/<app>.yaml` | 骨架起步,缺詞再補 |
+| 索引 | `scripts/index_all.py` 批次,50 AP 排一晚 |
 
 ## 前置需求
 
@@ -33,11 +33,11 @@
 ### 1. 取得模板,跑 setup
 
 ```powershell
-Copy-Item kb.config.yaml.example kb.config.yaml
-powershell -ExecutionPolicy Bypass -File setup.ps1   # venv + 依賴 + .mcp.json + selftest
+Copy-Item config\kb.config.yaml.example config\kb.config.yaml
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # venv + 依賴 + .mcp.json + selftest
 ```
 
-### 2. 填 kb.config.yaml(每 AP 一個區塊)
+### 2. 填 config/kb.config.yaml(每 AP 一個區塊)
 
 ```yaml
 apps:
@@ -75,7 +75,7 @@ codegraph status        # 確認索引完成
 **3b. 語意索引**(掛排程,日常只需要這一支):
 
 ```powershell
-.\.venv\Scripts\python.exe -X utf8 index_all.py --pull
+.\.venv\Scripts\python.exe -X utf8 scripts\index_all.py --pull
 # 逐 AP 自動執行:git pull → codegraph sync → 語意索引增量
 # 沒建過圖的 AP 會列出提示(回到 3a),不擋其他 AP
 ```
@@ -85,10 +85,10 @@ codegraph status        # 確認索引完成
 ### 4. 填對照表(缺詞再補)
 
 ```powershell
-.\.venv\Scripts\python.exe -X utf8 extract_glossary.py --app besthouse
+.\.venv\Scripts\python.exe -X utf8 scripts\extract_glossary.py --app besthouse
 ```
 
-從骨架挑高頻業務詞填 `glossary/<app>.yaml`(只需中文、只存名詞對應不存公式):
+從骨架挑高頻業務詞填 `config/glossary/<app>.yaml`(只需中文、只存名詞對應不存公式):
 
 ```yaml
 - term: 房子分數
@@ -103,12 +103,12 @@ codegraph status        # 確認索引完成
 $env:KB_TRANSPORT = "http"
 $env:KB_HTTP_HOST = "0.0.0.0"          # KB_HTTP_PORT 預設 8600
 $env:KB_AUTH_TOKEN = "<team-token>"    # 不設 = 無認證,僅限信任內網
-.\.venv\Scripts\python.exe -X utf8 kb_server.py
+.\.venv\Scripts\python.exe -X utf8 rosetta\kb_server.py
 ```
 
 驗收(每個重點 AP 3+1 題):code 邏輯題附檔名:行號、DB 題回**現值**、
-config 題密碼有遮罩、模糊問法路由到對的 AP。通過後把 Connector URL +
-USER-GUIDE.md 發給使用者(Team/Enterprise 由管理員後台統一新增)。
+config 題密碼有遮罩、模糊問法路由到對的 AP。通過後把 Connector URL
+發給使用者(Team/Enterprise 由管理員後台統一新增)。
 
 ### 6. 在 Claude Code 註冊 MCP
 
@@ -125,9 +125,9 @@ claude mcp add --transport http rosetta http://localhost:8600/mcp --header "Auth
 2. **cp950 編碼炸裂**:env 必設 `PYTHONUTF8=1`;`.ps1` 檔要 UTF-8 with BOM;
    會被 pip/python 以地區編碼讀的檔案(如 `requirements.txt`)只寫 ASCII,
    否則 zh-TW Windows 上 pip 直接 UnicodeDecodeError。
-3. **搬目錄會壞**:venv 綁絕對路徑,搬移後重跑 `setup.ps1`。
+3. **搬目錄會壞**:venv 綁絕對路徑,搬移後重跑 `scripts/setup.ps1`。
 4. **改了 server code** → 重啟服務(stdio 則 `/mcp` Reconnect);
-   **AP code 有 commit** → 排程自動增量,手動則跑 `index_all.py`。
+   **AP code 有 commit** → 排程自動增量,手動則跑 `scripts/index_all.py`。
 5. **路由不準** → 先改該 AP 的 `description`(太像系統代號就會不準)。
 6. **呼叫圖缺邊**:tree-sitter 抓不到 DI/反射/interface 實作的邊,
    `get_structure` 說沒 caller 不等於沒人用;影響評估用全文搜尋交叉確認。

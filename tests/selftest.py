@@ -1,13 +1,15 @@
 """函式層自我驗證(不經 MCP 協定,直接呼叫各模組)。
 
-用法:.venv\\Scripts\\python.exe -X utf8 selftest.py
+用法:.venv\\Scripts\\python.exe -X utf8 tests\\selftest.py
 涵蓋:kb.config.yaml 載入與 app 解析(v3.1)、glossary、grep 引擎展開對比、
 語意檢索(zh/en/de/ja)、get_structure 呼叫鏈、config 遮罩、DB 白名單與現值查詢、
-路徑防護。ja 測試題讀自 eval/questions.ja.yaml,輸出只印題號不印原文(使用者慣例)。
+路徑防護。ja 測試題內嵌於 eval/questions.yaml,輸出只印題號不印原文(使用者慣例)。
 """
 
 from pathlib import Path
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rosetta"))
 
 import yaml
 
@@ -91,11 +93,9 @@ def main() -> None:
         semantic_ready = False
     check("語意索引存在(.semantic/<app>/)", semantic_ready)
     if semantic_ready:
-        ja_map = {}
-        ja_path = Path(__file__).parent / "eval" / "questions.ja.yaml"
-        if ja_path.is_file():
-            ja_map = {q["id"]: q["ja"]
-                      for q in yaml.safe_load(ja_path.read_text(encoding="utf-8"))}
+        questions_path = kb_config.ROOT_DIR / "eval" / "questions.yaml"
+        ja_map = {q["id"]: q.get("ja", "")
+                  for q in yaml.safe_load(questions_path.read_text(encoding="utf-8"))}
         cases = [
             ("zh", "不含車位的每坪單價怎麼算", "priceperpingwithoutparking"),
             ("en", "How is the price per ping without parking calculated?", "priceperpingwithoutparking"),
@@ -109,7 +109,7 @@ def main() -> None:
             extra, _ = glossary.expand_query(q, app.glossary_path)
             hits = semantic_search.search(q, 3, extra, app)
             ok = any(expected in h.qualified_name.lower() for h in hits)
-            shown_q = q if lang != "ja" else "(ja q1,原文見 eval/questions.ja.yaml)"
+            shown_q = q if lang != "ja" else "(ja q1,原文見 eval/questions.yaml)"
             check(f"semantic {lang} top-3 命中目標", ok, shown_q[:50])
 
     # 4. get_structure:呼叫鏈正確性(Phase 4 驗收)
@@ -136,8 +136,9 @@ def main() -> None:
     # 6. DB 白名單(白名單與敏感表現在來自 kb.config.yaml)
     out = db_config.query_table("MEMBER", 50, app)
     check("MEMBER(敏感表)被拒且給理由", "不可查詢" in out and "個資" in out)
+    # HOUSE 已於 kb.config.yaml 白名單開放(commit bb9b73c),不應再被白名單擋
     out = db_config.query_table("HOUSE", 50, app)
-    check("HOUSE(非設定表)被拒", "白名單" in out)
+    check("HOUSE(白名單表)可查詢、未被白名單擋", "白名單" not in out)
     out = db_config.query_table("RATING_DIMENSION;DROP TABLE X", 50, app)
     check("奇怪的 table 名被拒", "白名單" in out)
 

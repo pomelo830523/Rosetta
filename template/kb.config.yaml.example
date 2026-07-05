@@ -1,6 +1,8 @@
-# NL Query KB 設定範本 —— 複製為 kb.config.yaml 後填入你的 AP
-# 路徑規則:repo_root 相對於本檔目錄;search_dirs/resources_dir/entity_dir 相對於 repo_root;
-#           glossary 相對於本檔目錄。編輯即時生效,不需重啟 server。
+# NL Query KB 設定範本 —— 複製為 config/kb.config.yaml 後填入你的 AP
+# 路徑規則:repo_root 相對於 kb server 專案根(config/ 的上一層);
+#           search_dirs/resources_dir/entity_dir 相對於 repo_root;
+#           glossary 相對於 config/ 目錄。
+# 編輯即時生效,不需重啟 server;例外:新增/移除 AP 需重啟(MCP instructions 的 AP 清單)。
 
 server_name: your-team-kb        # 顯示在 Claude 的 server 名稱
 

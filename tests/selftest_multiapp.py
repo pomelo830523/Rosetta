@@ -4,12 +4,14 @@
 驗證:多 AP 時 app 必帶、search/glossary/config/DB 各層隔離、跨 AP 讀檔被擋。
 fixture 在 eval/fixture-app/(自帶,不依賴其他 repo,模板使用者也能跑)。
 
-用法:.venv\\Scripts\\python.exe -X utf8 selftest_multiapp.py
+用法:.venv\\Scripts\\python.exe -X utf8 tests\\selftest_multiapp.py
 """
 
 from pathlib import Path
 import sys
 import tempfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rosetta"))
 
 import kb_config
 
@@ -36,7 +38,7 @@ apps:
     repo_root: eval/fixture-app
     search_dirs: [src]
     resources_dir: src/main/resources
-    glossary: eval/fixture-app/glossary.yaml
+    glossary: ../eval/fixture-app/glossary.yaml   # glossary 相對於 config/ 目錄
     engine: grep
     db:
       driver: mariadb

@@ -12,25 +12,26 @@
 - MCP instructions(六條慣例)。selftest 26/26。
 - MiniLM 驗證:索引快 15 倍、de 原文直查 miss → 預設維持 e5-large,MiniLM 為輕量選項。
 
-## Phase 5 — 端到端驗收(下一步)
+## Phase 5 — 端到端驗收 ✅(2026-07-05,報告 eval/ACCEPTANCE.md)
 
-1. 補齊 10 題 zh 母本(涵蓋 code / DB / yml / 跨源;已有 5 題)。
-2. 逐題實測(zh):來源正確性、幻覺、tools 使用、instructions 遵守率。
-3. de / ja 各 2 題抽查:來源與 zh 版一致、回答語言跟隨提問。
-4. 驗收報告:通過率(zh ≥ 9/10)+ 失敗根因分類。
-
-**停損**:zh < 9/10 → 回補 glossary 或檢索層,暫停後續。
+- 題庫增至 10 題(code / DB / yml / 跨源);E2E 手動採分。
+- zh **10/10**(來源正確、零幻覺、tools 選用正確、六條 instructions 無違反)≥ 9/10 門檻,通過。
+- de/ja 各 2 題抽查:來源與 zh 一致、回答語言跟隨;唯 de q8(跨源)語意 top-3 偏「動作入口」,
+  經 glossary/lookup_term 可回收 → 列根因 R1(檢索排序,非幻覺),建議依 instructions #4/#5 回收、暫不改檢索。
+- 停損未觸發;glossary 與檢索層本輪不需回補。
 
 ## Phase 6 收尾(剩餘)
 
 - Oracle driver 實測(程式就緒;等首個 Oracle AP 環境)。
 
-## Phase 7 — 企業化規模評估
+## Phase 7 — 規模評估:一隊一台,百萬行以內 ✅(2026-07-05,報告 docs/ENTERPRISE-GAP.md)
 
-1. 工具合約搬到千萬行:哪些直接可用、哪些換引擎(每格標註 實測/試算/推測)。
-2. 千萬行索引成本外推:首建時間、增量延遲、向量記憶體、分片。
-3. glossary 成本:每 AP 20~30 條 zh × N 個 AP,萃取 pipeline 自動化程度。
-4. 回傳最佳化:tool 回傳大小 vs token、呼叫鏈附掛開關差異、instructions 遵守率。
+- 定位:一隊一台,單台上限百萬行以內(≈5~10 萬 symbols);不追求單台千萬行。
+- 結論:**此定位下現行架構基本不用改**——numpy 暴力內積(~40~100ms)、float32(400MB)、
+  全檔重寫增量(400MB/秒級)在 10 萬 symbol 皆可接受。唯一摩擦是 e5-large CPU 首建(~9.7h,
+  一次性),用 MiniLM(~35min)或借一次 GPU 即解。config/DB 查詢與行數脫鉤,glossary 線性小成本。
+- 結構圖換 SCIP-Java 為邊的正確性(非規模);Oracle 為相容性——兩者定位內仍建議處理。
+- 千萬行/跨團隊聚合(ANN、int8、GPU、分片)列為範圍外參考(ENTERPRISE-GAP.md §6)。
 
 ## 風險
 

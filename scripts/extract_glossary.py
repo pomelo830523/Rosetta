@@ -3,14 +3,16 @@
 掃描 backend entity 的 @Table / @Column / enum 常數與其上方的 JavaDoc 中文註解,
 產出 glossary.generated.yaml 骨架:IT 詞自動填入,aliases 留白待人工補使用者口語。
 
-用法:python extract_glossary.py [--app NAME]
-輸出:glossary.generated.<app>.yaml(供人工挑選合併進該 app 的 glossary,不直接覆蓋)
+用法:python scripts\\extract_glossary.py [--app NAME]
+輸出:glossary.generated.<app>.yaml(在專案根,供人工挑選合併進該 app 的 glossary,不直接覆蓋)
 entity 目錄來自 kb.config.yaml 的 entity_dir(per-app)。
 """
 
 from pathlib import Path
 import re
 import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rosetta"))
 
 import kb_config
 
@@ -93,7 +95,7 @@ def main() -> None:
     items: list[dict] = []
     for path in sorted(app.entity_dir.rglob("*.java")):
         items.extend(extract_file(path))
-    output_path = Path(__file__).parent / f"glossary.generated.{app.name}.yaml"
+    output_path = kb_config.ROOT_DIR / f"glossary.generated.{app.name}.yaml"
     output_path.write_text(to_yaml(items), encoding="utf-8")
     print(f"已產出 {output_path.name}:{len(items)} 條骨架(entity 來源:{app.entity_dir})")
 

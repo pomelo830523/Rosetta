@@ -21,7 +21,10 @@ import glossary
 import graph_db
 import kb_config
 
-_config = kb_config.load_config()  # 設定壞掉時 fail fast,錯誤訊息進 MCP log
+# 設定壞掉時 fail fast,錯誤訊息進 MCP log。
+# 注意:instructions 內的 AP 清單在這裡烘進字串,新增/移除 AP 後需重啟 server
+# (tools 本身每次呼叫都重讀設定,編輯白名單/路徑等仍即時生效)。
+_config = kb_config.load_config()
 
 _INSTRUCTIONS = f"""本 server 是唯讀的「系統邏輯知識庫」,服務多個 AP。回答使用者問題時遵守:
 
@@ -246,6 +249,9 @@ def get_structure(symbol: str, app: str = "") -> str:
     return "\n\n".join(parts)
 
 
+_MAX_SOURCE_CHARS = 100_000  # read_source 單檔回傳上限,防超大檔灌爆對話 context
+
+
 @mcp.tool()
 def read_source(relative_path: str, app: str = "") -> str:
     """讀取指定 AP 原始碼檔案的完整內容。relative_path 以該 AP 的專案根為基準,
@@ -260,7 +266,14 @@ def read_source(relative_path: str, app: str = "") -> str:
         return "路徑超出專案範圍,拒絕讀取。"
     if not target.is_file():
         return f"找不到檔案:{relative_path}(app={ctx.name})"
-    return target.read_text(encoding="utf-8")
+    text = target.read_text(encoding="utf-8", errors="replace")
+    if len(text) > _MAX_SOURCE_CHARS:
+        total_lines = text.count("\n") + 1
+        return (text[:_MAX_SOURCE_CHARS]
+                + f"\n\n(檔案過大,已截斷:共 {total_lines} 行/{len(text)} 字元,"
+                f"僅回傳前 {_MAX_SOURCE_CHARS} 字元。建議改用 search_code 或 "
+                "get_structure 鎖定目標 symbol。)")
+    return text
 
 
 @mcp.tool()
@@ -320,7 +333,7 @@ class _BearerTokenGuard:
 
 
 def _run_http() -> None:
-    """集中部署:streamable HTTP(USER-GUIDE 的 Connector URL 指到 /mcp)。"""
+    """集中部署:streamable HTTP(使用者端的 Connector URL 指到 /mcp)。"""
     import uvicorn
     app = mcp.streamable_http_app()
     token = os.environ.get("KB_AUTH_TOKEN", "")

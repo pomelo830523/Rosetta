@@ -1,6 +1,6 @@
 # SPEC — NL Query KB(自然語言查詢系統邏輯)
 
-> 團隊架設:[QUICKSTART.md](QUICKSTART.md);使用者安裝:[USER-GUIDE.md](USER-GUIDE.md)。
+> 團隊架設:[QUICKSTART.md](QUICKSTART.md)。
 > 驗證場域:BestHouse。
 
 ## 1. 目的與分工
@@ -17,7 +17,7 @@ server 端強制,不依賴模型自律。
 | 多語言提問 | Claude 檢索前改寫成「zh 業務詞 + en IT 詞」(慣例內建於 MCP instructions,§4.6) |
 | 使用者用語 ≠ IT 命名 | glossary:zh 業務詞 ↔ it_terms 的精確錨點(repo 專屬知識,§4.1) |
 | 邏輯不只在 code | config tools 即時讀 yml 與 DB 現值(§4.4) |
-| 規模(百萬~千萬行) | 離線預建索引,查詢期不全掃描(§4.2、§4.5) |
+| 規模(一隊一台,百萬行以內) | 離線預建索引,查詢期不全掃描(§4.2、§4.5) |
 
 ## 2. 部署形態
 
@@ -149,7 +149,7 @@ flowchart LR
     note: 各維度分數 × 權重加總,權重存於 DB
   ```
 - zh 子字串比對;**只存名詞對應、不存公式**(公式讓 AI 讀 code,不會過期)。
-- 骨架由 `extract_glossary.py --app <name>` 產生,缺詞再補,不求全。
+- 骨架由 `scripts/extract_glossary.py --app <name>` 產生,缺詞再補,不求全。
 
 ### 4.2 語意索引與引擎
 
@@ -159,7 +159,8 @@ flowchart LR
 - **model**:預設 `intfloat/multilingual-e5-large`;輕量選項
   `paraphrase-multilingual-MiniLM-L12-v2`(索引快 15 倍,de 原文直查較弱;
   Claude 歸一化後 zh/en 無差)。`embed_model` / `KB_EMBED_MODEL` 切換,換 model 自動全量重建。
-- **向量庫**:numpy 單檔內積(BestHouse 規模 < 1ms);規模化換 hnswlib/Qdrant,介面不變。
+- **向量庫**:numpy 單檔內積(BestHouse < 1ms;百萬行以內 ~10 萬 symbols 仍 < 0.1s,一隊一台夠用);
+  超出本定位(千萬行/高並發)才換 hnswlib/Qdrant,介面不變。
 - **增量**:codegraph content-hash 判斷變更檔;glossary 或 model 變更自動全量。
 - **混合排序**:ANN 相似度 + 字面 boost 按命中詞數累計
   (親打詞每詞 +0.08 封頂 0.24、glossary 展開詞每詞 +0.04 封頂 0.20)。
@@ -169,7 +170,7 @@ flowchart LR
 
 ### 4.3 get_structure
 
-- 輸入 symbol → callers / callees / 位置;唯讀直讀 `codegraph.db`(鎖 schema v5,
+- 輸入 symbol → callers / callees / 位置;唯讀直讀 `codegraph.db`(鎖 schema v6,
   版本不符回警告不中斷)。
 - `search_code` 可附一層呼叫鏈(`include_call_chain`,預設開)。
 - **可信度界線**:tree-sitter 是語法層解析——Spring DI、interface 實作、反射、
@@ -183,15 +184,17 @@ flowchart LR
 | `get_app_config(key_pattern, app)` | 解析 `application*.yml`,回 key/value 與來源檔 | 敏感 key 遮罩 |
 | `query_db_config(table, limit, app)` | 查 DB 設定表現值 | 白名單 + SELECT only;敏感表排除並附理由 |
 
-### 4.5 規模矩陣
+### 4.5 規模矩陣(定位:一隊一台,百萬行以內)
 
 | repo 規模 | 語意引擎 | 結構引擎 | 查詢延遲 |
 |---|---|---|---|
 | < 10 萬行 | 本地 embedding(首建秒~分鐘) | codegraph(tree-sitter) | < 1s |
-| 10 萬 ~ 百萬行 | 同上 + hnswlib | codegraph | < 1s |
-| 百萬 ~ 千萬行 | 分片 ANN + int8 量化(60~100 萬 symbols ≈ 0.7~1 GB,單機可載) | SCIP-Java / Spoon | p95 < 3s |
+| 10 萬 ~ 百萬行(≈ 5~10 萬 symbols) | 本地 embedding + numpy 單檔內積(float32 ≈ 400 MB,現行不用改;首建慢時用 MiniLM 或 GPU) | codegraph | < 0.1s |
 
-查詢期禁止全掃描;字面全掃描無法解口語比對,換 ripgrep 也一樣。
+- 一隊一台的合理上限即上表;numpy 暴力內積在 10 萬 symbols 仍 < 0.1s(單台團隊低 QPS)。
+- 查詢期禁止全掃描;字面全掃描無法解口語比對,換 ripgrep 也一樣。
+- **超出本定位**(單台千萬行 / 高並發 / 跨團隊聚合)的引擎替換(ANN、int8、GPU、分片、
+  SCIP-Java)屬另一產品形態,詳見 docs/ENTERPRISE-GAP.md §6「範圍外參考」。
 
 ### 4.6 MCP instructions(內建於 server,Claude 連上即遵守)
 
@@ -245,13 +248,17 @@ embed_model: ""                # 空 = e5-large
 - HTTP 未設 `KB_AUTH_TOKEN` 時無認證,僅限信任內網;token 注入依 Claude 通道能力,
   必要時走反向代理。
 - codegraph 圖缺 DI/反射邊(§4.3);中文 docstring 在 Windows 為亂碼,註解由 kb 自抽。
-- 絕對路徑:搬移目錄後重跑 `setup.ps1`。
+- 絕對路徑:搬移目錄後重跑 `scripts/setup.ps1`。
 
-## 8. 企業化差距
+## 8. 範圍外差距(超出「一隊一台、百萬行以內」定位)
 
-| 面向 | 現況 | 企業(百萬~千萬行) |
+> 本系統定位在一隊一台、百萬行以內(§4.5);下表為**超出定位**(單台千萬行 /
+> 高並發 / 跨團隊聚合)才需要的替換,屬另一產品形態。完整外推見 docs/ENTERPRISE-GAP.md。
+> 例外:結構檢索與 Oracle 是「正確性/相容性」議題,與規模無關,定位內也建議處理。
+
+| 面向 | 現況(百萬行內夠用) | 超出定位時(千萬行/跨團隊) |
 |---|---|---|
-| 語意檢索 | 本地 embedding + numpy 單檔 | hnswlib/Qdrant、分片、量化、GPU 批次嵌入 |
-| 結構檢索 | codegraph(tree-sitter) | SCIP-Java / Spoon(型別感知,補 DI 邊) |
-| 索引更新 | 排程 index_all | CI on commit |
-| config 查詢 | 直讀 yml + MariaDB | config center / 各 AP DB 唯讀帳號;Oracle 驗證 |
+| 語意檢索 | 本地 embedding + numpy 單檔(float32,~10 萬 symbols < 0.1s) | hnswlib/Qdrant、分片、int8 量化、GPU 批次嵌入 |
+| 結構檢索 | codegraph(tree-sitter) | SCIP-Java / Spoon(型別感知,補 DI 邊)—— 為正確性,非規模 |
+| 索引更新 | 排程 index_all + content-hash 增量 | CI on commit + 向量庫 upsert |
+| config 查詢 | 直讀 yml + MariaDB(與行數脫鉤) | config center / 各 AP DB 唯讀帳號;Oracle 驗證(相容性,定位內先做) |
