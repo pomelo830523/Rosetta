@@ -1,0 +1,6 @@
+mcp[cli]
+pyyaml
+pymysql
+# semantic index: local ONNX embedding, no cloud dependency
+fastembed
+numpy

@@ -1,0 +1,5 @@
+# fixture app 的對照表(multi-AP 隔離測試用)
+- term: 運費
+  aliases: [運送費用, 免運]
+  it_terms: [OrderService.calculateShippingFee]
+  note: 滿千免運,未滿依重量計費(fixture)

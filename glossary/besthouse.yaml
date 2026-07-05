@@ -1,0 +1,192 @@
+# 業務用語 ↔ IT 用語對照表(glossary,v2 多語)
+#
+# 用途:使用者的口語(zh/ja/de/en)→ 程式碼/DB/config 的 IT 命名,
+# 供 search_code 展開/boost、語意索引反向注入與 lookup_term 查詢。
+# 維護:名詞對應(不放公式邏輯,公式永遠以程式碼為準)。改 DB schema / rename 時同步更新本檔。
+# schema v2:aliases 可為平面 list(視為 zh)或分語言 dict {zh, en, de, ja}。
+# ja aliases 為機翻+人工複核,依使用者慣例只存於本資料檔,不出現在文件與對話。
+
+- term: 房子總分
+  aliases:
+    zh: [總分, 排名, 分數怎麼算, 評分結果, 綜合評分]
+    en: [total score, house score, ranking]
+    de: [Gesamtbewertung, Rangfolge, Punktzahl]
+    ja: [総合スコア, ランキング, 総合評価]
+  it_terms: [ScoreService.calculateRanking, HOUSE_RATING, RATING_DIMENSION, ScoreResultDto]
+  note: 各成員對各維度評分 × 維度權重(DB)× 成員權重(DB)加總;權重現值要查 DB。
+
+- term: 評分比重
+  aliases:
+    zh: [權重, 佔比, 比重, 評分維度, 哪些項目在評分]
+    en: [weight, rating weight, dimension weight]
+    de: [Gewichtung, Gewicht]
+    ja: [重み, ウェイト, 配点]
+  it_terms: [RATING_DIMENSION, WEIGHT, DIMENSION_NAME, RatingDimension]
+  note: 存於 DB RATING_DIMENSION 表,曾被 V19 migration 調整過,程式碼看不到現值,必須查 DB。
+
+- term: 房貸月付金
+  aliases:
+    zh: [房貸, 月付金, 貸款, 每月繳多少]
+    en: [monthly mortgage, mortgage payment]
+    de: [Hypothekenrate, monatliche Rate, Hypothek]
+    ja: [住宅ローン, 月々の返済額]
+  it_terms: [HouseService.calculateMonthlyMortgage, monthlyMortgage, calculateMonthlyInterest]
+  note: 以總價 8 成貸款試算;公式以程式碼為準。
+
+- term: 月息租金比
+  aliases:
+    zh: [月息, 利息跟租金比, 買不如租, 租金比]
+    en: [interest to rent ratio, interest versus rent]
+    de: [Zinsen zu Miete, Zins-Miete-Verhaeltnis]
+    ja: [利息と家賃の比率]
+  it_terms: [HouseService.calculateInterestToRentRatio, interestToRentRatio, MONTHLY_RENT]
+  note: 買房月純利息 ÷ 月租,評估買租取捨。
+
+- term: 家庭成員權重
+  aliases: [誰在評分, 成員, 家人的意見, 成員比重]
+  it_terms: [MEMBER, MemberService, MemberDto]
+  note: MEMBER 表含個人權重,屬敏感設定,不在 query_db_config 白名單內。
+
+- term: 不含車位單價
+  aliases:
+    zh: [每坪多少錢, 單價, 每坪單價, 扣掉車位的價格, 一坪多少]
+    en: [unit price excluding parking, price per ping without parking]
+    de: [Preis ohne Stellplatz, Preis pro Ping ohne Parkplatz]
+    ja: [駐車場を除いた坪単価, 駐車場なしの単価]
+  it_terms: [calculatePricePerPingWithoutParking, calcPricePerPingWithoutParking, TOTAL_PRICE, PARKING_PRICE, BUILD_AREA_PING, PARKING_PING]
+  note: 公式以程式碼為準;HouseService 與 FilterService 各有一份實作(已知重複)。
+    相關 DB 欄位都在 HOUSE 表:TOTAL_PRICE、PARKING_PRICE、PARKING_PING、
+    BUILD_AREA_PING、PARKING_TYPE(車位價未填時程式以車位坪×30萬估算)。
+
+- term: 含車位單價
+  aliases: [含車位每坪]
+  it_terms: [calculatePricePerPing, TOTAL_PRICE, BUILD_AREA_PING]
+  note: ''
+
+- term: 篩選規則
+  aliases:
+    zh: [淘汰條件, 過濾, 為什麼被刷掉, 為什麼被淘汰, 排除條件, 門檻]
+    en: [filter rule, threshold, filtered out]
+    de: [Filterregel, Schwellenwert, aussortiert]
+    ja: [フィルタルール, 足切り条件]
+  it_terms: [FILTER_RULE, FilterService.applyFilters, FilterRuleType, RULE_TYPE, NUM_VALUE, IS_ACTIVE]
+  note: 規則種類在 FilterRuleType(程式碼),門檻數值在 FILTER_RULE 表(DB 現值)。
+
+- term: 淘汰原因
+  aliases:
+    zh: [被刷掉的原因, 出局原因]
+    en: [eliminated reason, elimination reason]
+    de: [Ausschlussgrund, Grund aussortiert]
+    ja: [除外理由, 落選理由]
+  it_terms: [ELIMINATED_REASON, HouseStatus, ELIMINATED]
+  note: ''
+
+- term: 警告訊息
+  aliases: [黃燈, 提醒, 可修繕問題]
+  it_terms: [WARNING_REASON, WARN_REPAIRABLE_VISIT_ISSUES]
+  note: 可修繕缺陷只警告不淘汰,房子維持 ACTIVE。
+
+- term: 車位
+  aliases: [停車位, 停車, 平面車位, 機械車位]
+  it_terms: [PARKING_TYPE, PARKING_PRICE, PARKING_PING, ParkingType, IS_PARKING_LOWEST_FLOOR]
+  note: ''
+
+- term: 機車位
+  aliases: [摩托車位, 機車停哪]
+  it_terms: [HAS_MOTORCYCLE_PARKING]
+  note: ''
+
+- term: 坪數
+  aliases: [建坪, 幾坪, 多大]
+  it_terms: [BUILD_AREA_PING, INDOOR_PING]
+  note: 建坪=權狀坪數,室內坪=實際使用。
+
+- term: 室內坪數
+  aliases: [實坪, 室內多大]
+  it_terms: [INDOOR_PING]
+  note: ''
+
+- term: 屋齡
+  aliases: [幾年的房子, 多舊]
+  it_terms: [HOUSE_AGE_YEAR, MAX_HOUSE_AGE]
+  note: 屋齡上限是 FILTER_RULE 的一種(MAX_HOUSE_AGE)。
+
+- term: 管理費
+  aliases: [月管理費, 社區費用]
+  it_terms: [MONTHLY_FEE]
+  note: ''
+
+- term: 月租
+  aliases: [房租, 租金, 出租行情]
+  it_terms: [MONTHLY_RENT]
+  note: ''
+
+- term: 實價登錄
+  aliases: [實登, 成交行情, 市場行情, 附近成交價]
+  it_terms: [REGISTRY_PRICE_PER_PING_MIN, REGISTRY_PRICE_PER_PING_MAX, LATEST_REGISTRY_PRICE_PER_PING]
+  note: 使用者手填(萬/坪、不含車位),非系統自動抓取。
+
+- term: 議價
+  aliases: [折扣, 殺價, 打幾折]
+  it_terms: [DISCOUNT_PERCENT]
+  note: ''
+
+- term: 通勤
+  aliases: [走路到車站, 到高鐵多遠, 交通, 距離車站]
+  it_terms: [WALK_METERS_TO_HSR_ZHUBEI, WALK_METERS_TO_FENGYUAN, NEAREST_STATION_TO_HSR_ZHUBEI, MAX_WALK_METERS_TO_HSR_ZHUBEI]
+  note: 兩個通勤方向:竹北高鐵、新竹火車站(豐原方向欄位名為 FENGYUAN)。
+
+- term: 學區
+  aliases: [學校, 國小, 國中, 小孩上學]
+  it_terms: [WALK_METERS_TO_ELEMENTARY, NEAREST_ELEMENTARY_SCHOOL, WALK_METERS_TO_JUNIOR_HIGH, NEAREST_JUNIOR_HIGH_SCHOOL]
+  note: ''
+
+- term: 看房檢查
+  aliases: [驗屋, 看房紀錄, 屋況檢查, 現場檢查]
+  it_terms: [HAS_MOLD_OR_LEAK, IS_FLOOR_LEVEL_OK, IS_DOOR_WINDOW_OK, IS_WATER_PRESSURE_OK, ELECTRIC_CAPACITY, EXCLUDE_VISIT_ISSUES, EXCLUDE_FATAL_VISIT_ISSUES]
+  note: 致命缺陷淘汰、可修繕缺陷警告,分兩種規則。
+
+- term: 凶宅
+  aliases: [兇宅, 事故屋]
+  it_terms: [IS_HAUNTED]
+  note: ''
+
+- term: 海砂屋
+  aliases: [海砂]
+  it_terms: [IS_SEA_SAND]
+  note: ''
+
+- term: 輻射屋
+  aliases: [輻射]
+  it_terms: [IS_RADIATION]
+  note: ''
+
+- term: 違建
+  aliases: [違章建築, 頂加]
+  it_terms: [HAS_ILLEGAL_CONSTRUCTION]
+  note: ''
+
+- term: 淹水
+  aliases: [淹水風險, 會不會淹水, 水災]
+  it_terms: [FLOOD_RISK, FloodRisk]
+  note: ''
+
+- term: 嫌惡設施
+  aliases: [宮廟, 加油站, 高壓電塔, 福地]
+  it_terms: [HAS_NUISANCE_FACILITY, NUISANCE_FACILITY_NOTE]
+  note: ''
+
+- term: 電梯
+  aliases: [戶梯比, 每層幾戶, 電梯夠不夠]
+  it_terms: [ELEVATOR_COUNT, UNITS_PER_FLOOR, MAX_HOUSEHOLD_PER_ELEVATOR_RATIO]
+  note: 戶梯比上限是 FILTER_RULE 的一種。
+
+- term: AI 匯入
+  aliases: [截圖匯入, 自動輸入, 圖片辨識]
+  it_terms: [AiImportService.extractFromImage, AiImportController, gemini.api-key]
+  note: 用 Gemini 讀房屋列表截圖;API key 在 AP config(敏感,查詢時會遮罩)。
+
+- term: 資料庫連線
+  aliases: [連哪個資料庫, DB 設定, 資料存哪裡]
+  it_terms: [spring.datasource.url, spring.datasource.username, MariaDB]
+  note: 在 application.yml;密碼查詢時會遮罩。

@@ -1,0 +1,27 @@
+# 檢索評測題庫(zh 母本 + en/de 翻譯)。ja 版依使用者慣例存 questions.ja.yaml。
+# expected:top-3 內任一 qualified_name(lowercase)含任一子字串即視為命中。
+- id: q1
+  expected: [priceperpingwithoutparking]
+  zh: 不含車位的每坪單價是怎麼算出來的?
+  en: How is the unit price per ping excluding the parking space calculated?
+  de: Wie wird der Preis pro Ping ohne Stellplatz berechnet?
+- id: q2
+  expected: [calculateranking]
+  zh: 房子的總分排名是怎麼算的?
+  en: How is the total score ranking of the houses calculated?
+  de: Wie wird die Gesamtbewertung und Rangfolge der Haeuser berechnet?
+- id: q3
+  expected: [calculatemonthlymortgage]
+  zh: 每個月的房貸月付金怎麼算?
+  en: How is the monthly mortgage payment calculated?
+  de: Wie wird die monatliche Hypothekenrate berechnet?
+- id: q4
+  expected: [eliminatedreason, eliminatedhouses]
+  zh: 房子被刷掉的原因記錄在哪裡?
+  en: Where is the reason stored when a house gets filtered out?
+  de: Wo wird der Grund gespeichert, wenn ein Haus aussortiert wird?
+- id: q5
+  expected: [interesttorentratio]
+  zh: 買房月息是租金幾成怎麼算?
+  en: How is the ratio of monthly interest to rent calculated?
+  de: Wie wird das Verhaeltnis von monatlichen Zinsen zur Miete berechnet?

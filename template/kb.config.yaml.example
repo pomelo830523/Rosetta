@@ -1,0 +1,31 @@
+# NL Query KB 設定範本 —— 複製為 kb.config.yaml 後填入你的 AP
+# 路徑規則:repo_root 相對於本檔目錄;search_dirs/resources_dir/entity_dir 相對於 repo_root;
+#           glossary 相對於本檔目錄。編輯即時生效,不需重啟 server。
+
+server_name: your-team-kb        # 顯示在 Claude 的 server 名稱
+
+apps:
+  - name: your-app               # app 參數值:取短英文名(小寫)
+    # description 給 Claude 做 AP 路由:寫使用者聽得懂的一句話,不要寫系統代號
+    # (「請假與加班簽核系統」優於「HR-FLOW-SVC」)
+    description: 一句話說明這個系統管什麼
+    repo_root: ../your-app       # 該 AP 的 repo(伺服器上的 checkout 路徑)
+    search_dirs:                 # 要掃描的原始碼目錄(Java / TypeScript)
+      - backend/src
+      - frontend/src
+    resources_dir: backend/src/main/resources    # application*.yml 所在
+    entity_dir: backend/src/main/java/com/yourco/entity  # glossary 萃取用(可省略)
+    glossary: glossary/your-app.yaml
+    db:
+      driver: mariadb            # mariadb | oracle(oracle 程式就緒但未實測)
+      table_whitelist: []        # 只放「業務邏輯設定表」;個資表一律不放!
+      sensitive_tables: {}       # 刻意排除的表:{表名: 排除理由}
+
+  # 第二個以上的 AP 依樣新增區塊;tool 數量固定 7 個,不隨 AP 數成長
+
+# 全域預設(app 區塊可覆蓋)
+engine: auto          # 留 auto:有索引走 semantic(正式引擎),索引未就緒自動墊檔 grep;
+                      # 手動鎖 grep 只適合不打算維護索引的丟棄式小 AP
+embed_model: ""       # 空 = e5-large(品質佳);輕量可改
+                      # sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
+                      # (嵌入快 15 倍;de 原文直查較弱,經 Claude 歸一化後 zh/en 無差)

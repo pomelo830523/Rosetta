@@ -1,0 +1,8 @@
+# fixture app 的假設定(multi-AP 隔離測試用;帳密為假值,用來驗證遮罩)
+server:
+  port: 9999
+spring:
+  datasource:
+    url: jdbc:mariadb://localhost:3307/demodb
+    username: demo
+    password: demo-fake-password

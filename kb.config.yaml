@@ -1,0 +1,47 @@
+# Rosetta NL Query KB 設定(SPEC §4.7:一份 server code,一份設定列 N 個 AP)
+# 路徑規則:repo_root 相對於本檔目錄;search_dirs/resources_dir/entity_dir 相對於 repo_root;
+#           glossary 相對於本檔目錄。編輯本檔即時生效,不需重啟 server。
+
+server_name: rosetta
+
+apps:
+  - name: besthouse
+    # description 給 Claude 做 AP 路由用:寫使用者聽得懂的一句話,不要寫系統代號
+    description: 房屋喜好評估系統——房屋篩選、評分與權重
+    repo_root: ../BestHouse
+    search_dirs:
+      - besthouse-backend/src
+      - besthouse-frontend/src
+    resources_dir: besthouse-backend/src/main/resources
+    entity_dir: besthouse-backend/src/main/java/com/besthouse/entity
+    glossary: glossary/besthouse.yaml
+    db:
+      driver: mariadb            # mariadb | oracle(oracle 需 python-oracledb,尚未實測)
+      table_whitelist: [RATING_DIMENSION, FILTER_RULE]
+      sensitive_tables:          # 刻意排除的表:給明確理由,而不是裝作不存在
+        MEMBER: 含家庭成員個人權重(個資),已排除於查詢白名單。
+
+  - name: enhancesql
+    description: Oracle SQL Plan 穩定性改善實驗——解決 IN 子句 hard-parse 造成的查詢時間不穩定
+    repo_root: ../EnhanceSQL
+    search_dirs:
+      - backend/src
+      - frontend/src
+    resources_dir: backend/src/main/resources
+    entity_dir: backend/src/main/java/com/example/enhancesql/model
+    glossary: glossary/enhancesql.yaml
+    # 無業務設定表(示範用 H2),query_db_config 不開放任何表
+
+  - name: zplviewer
+    description: ZPL 與 PNG 標籤雙向轉換工具——ZPL 渲染、條碼產生與 OCR 轉回 ZPL
+    repo_root: ../ZPLViewer
+    search_dirs:
+      - backend/src
+      - frontend/src
+    resources_dir: backend/src/main/resources
+    glossary: glossary/zplviewer.yaml
+    # 無 DB,query_db_config 不開放任何表
+
+# 全域預設(app 區塊可覆蓋)
+engine: auto          # auto = 有語意索引用 semantic,否則 grep;可強制 semantic | grep
+embed_model: ""       # 空 = semantic_common.DEFAULT_MODEL;環境變數 KB_EMBED_MODEL 優先
