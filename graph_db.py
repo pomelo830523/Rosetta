@@ -1,7 +1,7 @@
 """codegraph.db 唯讀存取層(結構查詢 + 語意索引的 symbol 目錄)。
 
 只讀 `.codegraph/codegraph.db`(SQLite),不寫入、不觸發重建索引。
-版本鎖定:實測 schema version 5;版本不符時工具仍可用,但回傳警告字串。
+版本鎖定:實測 schema version 6(codegraph CLI 1.2.0);版本不符時工具仍可用,但回傳警告字串。
 
 注意:codegraph 在 Windows 上存的中文 docstring 已知是亂碼(編碼問題,不可逆),
 因此 NL 訊號(註解)一律由 semantic_index 直接從原始碼以 UTF-8 抽取,
@@ -13,7 +13,7 @@ import sqlite3
 
 from kb_config import AppContext
 
-TESTED_SCHEMA_VERSION = 5
+TESTED_SCHEMA_VERSION = 6
 
 # 進語意索引的 symbol 種類(import/file/namespace 等雜訊排除)
 INDEXABLE_KINDS = (
