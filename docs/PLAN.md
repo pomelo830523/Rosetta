@@ -11,6 +11,8 @@
   `setup.ps1`、模板(`make_template.ps1` → `nl-query-kb-template/`)。
 - MCP instructions(六條慣例)。selftest 26/26。
 - MiniLM 驗證:索引快 15 倍、de 原文直查 miss → 預設維持 e5-large,MiniLM 為輕量選項。
+- logging(kb_log.py,2026-07-05):stderr(+可選 KB_LOG_FILE);tool 呼叫計時、
+  歧義訊號 S1~S3(誤觸發率調校數據源)、拒絕事件(白名單/敏感表/filter/穿越/401)。
 
 ## Phase 5 — 端到端驗收 ✅(2026-07-05,報告 eval/ACCEPTANCE.md)
 

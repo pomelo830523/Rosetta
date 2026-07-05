@@ -166,6 +166,11 @@ def load_config() -> KbConfig:
             _cache["config"] = _parse(CONFIG_PATH.read_text(encoding="utf-8"))
         except yaml.YAMLError as exc:
             raise ValueError(f"kb.config.yaml 不是合法 YAML:{exc}") from exc
+        if _cache["stamp"] is not None:  # 首次載入由 kb_server 記,這裡只記「重新載入」
+            import kb_log
+            kb_log.setup().info(
+                "kb.config.yaml 重新載入:%d 個 AP(%s)",
+                len(_cache["config"].apps), ", ".join(_cache["config"].app_names()))
         _cache["stamp"] = stamp
     return _cache["config"]
 

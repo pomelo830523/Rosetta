@@ -57,6 +57,11 @@ def _load(app: AppContext) -> dict:
         cache["vectors"] = np.load(paths.vectors)
         cache["state"] = json.loads(paths.state.read_text(encoding="utf-8"))
         cache["stamp"] = stamp
+        import kb_log
+        kb_log.setup().info(
+            "語意索引載入 app=%s symbols=%d model=%s built_at=%s",
+            app.name, len(cache["meta"]),
+            cache["state"].get("model"), cache["state"].get("built_at"))
     return cache
 
 

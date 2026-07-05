@@ -10,7 +10,9 @@
 啟動:python kb_server.py
 """
 
+import functools
 import os
+import time
 
 from mcp.server.fastmcp import FastMCP
 
@@ -20,11 +22,15 @@ import db_config
 import glossary
 import graph_db
 import kb_config
+import kb_log
+
+log = kb_log.setup()
 
 # 設定壞掉時 fail fast,錯誤訊息進 MCP log。
 # 注意:instructions 內的 AP 清單在這裡烘進字串,新增/移除 AP 後需重啟 server
 # (tools 本身每次呼叫都重讀設定,編輯白名單/路徑等仍即時生效)。
 _config = kb_config.load_config()
+log.info("設定載入:%d 個 AP(%s)", len(_config.apps), ", ".join(_config.app_names()))
 
 _INSTRUCTIONS = f"""本 server 是唯讀的「系統邏輯知識庫」,服務多個 AP。回答使用者問題時遵守:
 
@@ -59,7 +65,30 @@ mcp = FastMCP(
 _resolve = kb_config.resolve_app
 
 
+def _logged(fn):
+    """tool 呼叫記錄:參數摘要、結果大小、耗時;未預期例外記完整 traceback。
+
+    functools.wraps 保留簽名與型別註記,FastMCP 產生 tool schema 不受影響。
+    """
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        summary = ", ".join(
+            f"{k}={kb_log.brief(str(v))}" for k, v in kwargs.items() if v not in ("", None)
+        ) or kb_log.brief(", ".join(str(a) for a in args))
+        started = time.perf_counter()
+        try:
+            result = fn(*args, **kwargs)
+        except Exception:
+            log.exception("tool=%s(%s)未預期例外", fn.__name__, summary)
+            raise
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        log.info("tool=%s(%s)→ %d 字元,%.0fms", fn.__name__, summary, len(result), elapsed_ms)
+        return result
+    return wrapper
+
+
 @mcp.tool()
+@_logged
 def list_apps() -> str:
     """列出本 server 管理的所有 AP(系統)與描述。
 
@@ -101,6 +130,7 @@ def _independent_concepts(query: str, matched: list) -> list:
 
 
 @mcp.tool()
+@_logged
 def lookup_term(query: str, app: str = "") -> str:
     """查指定 AP 的「業務用語 ↔ IT 用語」對照表。輸入使用者口語(如「權重」「被刷掉」),
     回傳對應的 class/method/DB 欄位/config key 與說明,作為後續搜尋的錨點。
@@ -121,6 +151,8 @@ def lookup_term(query: str, app: str = "") -> str:
     concepts = _independent_concepts(query, matched)
     if len(concepts) >= 2:
         names = "、".join(e.term for e in concepts)
+        log.info("S1 歧義訊號 app=%s query=%s concepts=%s",
+                 ctx.name, kb_log.brief(query), names)
         hint = (f"(歧義訊號:「{query}」命中 {len(concepts)} 個不同概念——{names}。"
                 "若無法從使用者的問題判斷是哪一個,請先以這些概念為選項向使用者確認,"
                 "再繼續檢索;若問題本身已可區分則直接繼續。)\n\n")
@@ -185,6 +217,8 @@ def _scatter_note(hits) -> str:
             classes.append(cls)
     if len(classes) < _SCATTER_MIN_CLASSES:
         return ""
+    log.info("S2 結果分散 classes=%s(top1-top3=%.3f)",
+             "、".join(classes[:5]), hits[0].score - hits[2].score)
     return (f"\n\n(歧義訊號:結果分散——前幾名分數接近且散在 {len(classes)} 個模組:"
             f"{'、'.join(classes[:5])}。若不確定使用者要問哪個功能,"
             "請先以這些模組對應的功能為選項向使用者釐清。)")
@@ -205,8 +239,12 @@ def _search_semantic(query: str, top_k: int, extra_terms, matched_entries,
     import semantic_search
     hits = semantic_search.search(query, top_k, extra_terms, ctx)
     if not hits:
+        log.info("S3 檢索空手 app=%s engine=semantic query=%s",
+                 ctx.name, kb_log.brief(query))
         return ("語意索引無足夠相關的結果。可先用 lookup_term 確認業務用語,"
                 "或以 IT 詞重查。" + _glossary_domain_hint(ctx))
+    log.info("search app=%s engine=semantic hits=%d top=%s(%.3f)",
+             ctx.name, len(hits), hits[0].qualified_name, hits[0].score)
     parts = [f"(app={ctx.name},engine=semantic,{semantic_search.index_info(ctx)})"]
     if matched_entries:
         expanded = "、".join(f"{e.term}→{'/'.join(e.it_terms[:3])}" for e in matched_entries)
@@ -228,8 +266,10 @@ def _search_grep(query: str, top_k: int, extra_terms, matched_entries,
                  ctx: kb_config.AppContext) -> str:
     results = code_search.search(query, top_k, extra_terms, ctx)
     if not results:
+        log.info("S3 檢索空手 app=%s engine=grep query=%s", ctx.name, kb_log.brief(query))
         return ("找不到相關程式碼。可先用 lookup_term 確認業務用語的 IT 對照,"
                 "再以 IT 詞重查。" + _glossary_domain_hint(ctx))
+    log.info("search app=%s engine=grep(墊檔)hits=%d", ctx.name, len(results))
     parts = [f"(app={ctx.name},engine=grep,全掃描 fallback)"]
     if matched_entries:
         hits = "、".join(f"{e.term}→{'/'.join(e.it_terms[:3])}" for e in matched_entries)
@@ -240,6 +280,7 @@ def _search_grep(query: str, top_k: int, extra_terms, matched_entries,
 
 
 @mcp.tool()
+@_logged
 def search_code(query: str, top_k: int = 3, app: str = "",
                 include_call_chain: bool = True) -> str:
     """用自然語言搜尋指定 AP 的原始碼,回傳最相關的 symbol(method/class/欄位)
@@ -261,6 +302,7 @@ def search_code(query: str, top_k: int = 3, app: str = "",
 
 
 @mcp.tool()
+@_logged
 def get_structure(symbol: str, app: str = "") -> str:
     """查指定 AP 中 symbol 的結構關係:誰呼叫它(callers)、它呼叫誰(callees)、
     定義位置。輸入 method/class/欄位名稱(可含 class 前綴,如 HouseService.toDto)。
@@ -321,6 +363,7 @@ _MAX_SOURCE_CHARS = 100_000  # read_source 單檔回傳上限,防超大檔灌爆
 
 
 @mcp.tool()
+@_logged
 def read_source(relative_path: str, app: str = "") -> str:
     """讀取指定 AP 原始碼檔案的完整內容。relative_path 以該 AP 的專案根為基準,
     例如 besthouse-backend/src/main/java/com/besthouse/service/HouseService.java"""
@@ -331,11 +374,14 @@ def read_source(relative_path: str, app: str = "") -> str:
     target = (root / relative_path).resolve()
     # 防目錄穿越:限制在該 AP 的專案根內
     if root not in target.parents and target != root:
+        log.warning("read_source 路徑穿越被擋 app=%s path=%s", ctx.name, relative_path)
         return "路徑超出專案範圍,拒絕讀取。"
     if not target.is_file():
         return f"找不到檔案:{relative_path}(app={ctx.name})"
     text = target.read_text(encoding="utf-8", errors="replace")
     if len(text) > _MAX_SOURCE_CHARS:
+        log.info("read_source 截斷 app=%s path=%s(%d 字元)",
+                 ctx.name, relative_path, len(text))
         total_lines = text.count("\n") + 1
         return (text[:_MAX_SOURCE_CHARS]
                 + f"\n\n(檔案過大,已截斷:共 {total_lines} 行/{len(text)} 字元,"
@@ -345,6 +391,7 @@ def read_source(relative_path: str, app: str = "") -> str:
 
 
 @mcp.tool()
+@_logged
 def get_app_config(key_pattern: str = "", app: str = "") -> str:
     """查詢指定 AP 的 config(application.yml / application-local.yml)設定值。
 
@@ -359,6 +406,7 @@ def get_app_config(key_pattern: str = "", app: str = "") -> str:
 
 
 @mcp.tool()
+@_logged
 def query_db_config(table: str, limit: int = 50, app: str = "",
                     filter_column: str = "", filter_op: str = "eq",
                     filter_value: str = "") -> str:
@@ -400,6 +448,9 @@ class _BearerTokenGuard:
         header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
         expected = f"Bearer {self._token}"
         if not hmac.compare_digest(header, expected):
+            client = (scope.get("client") or ("?", 0))[0]
+            log.warning("HTTP 401 Bearer 驗證失敗 client=%s path=%s",
+                        client, scope.get("path", ""))
             await send({"type": "http.response.start", "status": 401,
                         "headers": [(b"content-type", b"text/plain; charset=utf-8"),
                                     (b"www-authenticate", b"Bearer")]})
@@ -417,7 +468,9 @@ def _run_http() -> None:
     if token:
         app = _BearerTokenGuard(app, token)
     else:
-        print("警告:KB_AUTH_TOKEN 未設定,HTTP 模式無認證——僅限信任內網使用。")
+        log.warning("KB_AUTH_TOKEN 未設定,HTTP 模式無認證——僅限信任內網使用。")
+    log.info("啟動 transport=http %s:%d auth=%s",
+             mcp.settings.host, mcp.settings.port, "bearer" if token else "無")
     uvicorn.run(app, host=mcp.settings.host, port=mcp.settings.port)
 
 
@@ -425,4 +478,5 @@ if __name__ == "__main__":
     if os.environ.get("KB_TRANSPORT", "stdio").lower() == "http":
         _run_http()
     else:
+        log.info("啟動 transport=stdio")
         mcp.run()  # stdio:開發者本機模式

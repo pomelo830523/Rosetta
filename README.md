@@ -67,7 +67,11 @@ $env:KB_TRANSPORT="http"; $env:KB_AUTH_TOKEN="<token>"
 改了 server code → 重啟(stdio 則 `/mcp` Reconnect),並重跑 `scripts\make_template.ps1`
 同步模板。索引重建後 server 不用重啟;**新增/移除 AP 需重啟**(MCP instructions 的
 AP 清單是啟動時組好的)。環境變數:`KB_TRANSPORT`、`KB_HTTP_HOST/PORT`、
-`KB_AUTH_TOKEN`、`KB_ENGINE`、`KB_EMBED_MODEL`。
+`KB_AUTH_TOKEN`、`KB_ENGINE`、`KB_EMBED_MODEL`、`KB_LOG_LEVEL`、`KB_LOG_FILE`。
+
+log:一律走 stderr(stdio 模式 stdout 是 MCP 協定通道;Claude Code 收進
+mcp-logs),`KB_LOG_FILE` 設定時另寫檔案。INFO 記 tool 呼叫/歧義訊號(S1~S3),
+WARNING 記拒絕事件(白名單/敏感表/filter/路徑穿越/401),ERROR 記 DB 失敗。
 
 ## 注意
 

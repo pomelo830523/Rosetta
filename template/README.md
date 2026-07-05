@@ -41,6 +41,7 @@ cd <AP repo 根>; codegraph init .                 # 每 AP 建一次圖
 | `KB_HTTP_HOST` / `KB_HTTP_PORT` | http 綁定,預設 127.0.0.1:8600 |
 | `KB_AUTH_TOKEN` | http 的 Bearer 認證;未設定 = 僅限信任內網 |
 | `KB_ENGINE` / `KB_EMBED_MODEL` | 臨時覆蓋引擎 / embedding model |
+| `KB_LOG_LEVEL` / `KB_LOG_FILE` | log 等級(預設 INFO)/ log 檔路徑(log 一律走 stderr,設檔案則另寫一份) |
 
 ## 已知限制
 

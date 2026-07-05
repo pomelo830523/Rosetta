@@ -260,7 +260,13 @@ embed_model: ""                # 空 = e5-large
 
 編輯即時生效(mtime 快取),不需重啟 server。環境變數:
 `KB_TRANSPORT`(stdio|http)、`KB_HTTP_HOST/PORT`(預設 127.0.0.1:8600)、
-`KB_AUTH_TOKEN`(http 的 Bearer 認證)、`KB_ENGINE`、`KB_EMBED_MODEL`。
+`KB_AUTH_TOKEN`(http 的 Bearer 認證)、`KB_ENGINE`、`KB_EMBED_MODEL`、
+`KB_LOG_LEVEL`(預設 INFO)、`KB_LOG_FILE`(設定時 log 另寫檔案)。
+
+logging(kb_log.py):stdio 模式 stdout 是 MCP 協定通道,log 一律走 stderr
+(+ 可選檔案)。INFO 記 tool 呼叫(參數摘要/結果大小/耗時)、歧義訊號 S1~S3
+(供 Phase 8 誤觸發率調校)、索引與設定載入;WARNING 記拒絕事件
+(白名單/敏感表/filter 驗證/路徑穿越/HTTP 401)與引擎降級;ERROR 記 DB 連線失敗。
 
 ### 4.8 歧義釐清(使用者問不清楚時的反問能力)
 

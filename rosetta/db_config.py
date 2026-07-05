@@ -14,6 +14,9 @@ import re
 
 from app_config import load_effective_config
 from kb_config import AppContext
+import kb_log
+
+log = kb_log.setup()
 
 MAX_ROWS = 50
 VALID_FILTER_OPS = ("eq", "contains")
@@ -153,8 +156,11 @@ def query_table(table: str, limit: int, app: AppContext,
     name = table.strip().upper()
     sensitive_reason = app.db.sensitive_reason(name)
     if sensitive_reason:
+        log.warning("query_db_config 敏感表被拒 app=%s table=%s", app.name, name)
         return f"「{name}」不可查詢:{sensitive_reason}"
     if name not in app.db.table_whitelist:
+        log.warning("query_db_config 白名單外被拒 app=%s table=%s",
+                    app.name, kb_log.brief(name))
         allowed = ", ".join(app.db.table_whitelist) or "(此 app 未設定任何白名單表)"
         return (
             f"「{name}」不在 app「{app.name}」的查詢白名單。可查詢的設定表:{allowed}。"
@@ -165,6 +171,8 @@ def query_table(table: str, limit: int, app: AppContext,
     try:
         flt = _parse_filter(filter_column, filter_op, filter_value)
     except FilterError as exc:
+        log.warning("query_db_config filter 參數不合法 app=%s table=%s:%s",
+                    app.name, name, exc)
         return str(exc)
 
     try:
@@ -180,8 +188,12 @@ def query_table(table: str, limit: int, app: AppContext,
     except ImportError as exc:
         return f"缺少 {app.db.driver} 的 DB driver 套件:{exc}(pip install 後重啟 server)"
     except FilterError as exc:  # 欄位不存在:回可用欄位清單供自我修正
+        log.warning("query_db_config filter_column 驗證失敗 app=%s table=%s column=%s",
+                    app.name, name, kb_log.brief(filter_column))
         return str(exc)
     except Exception as exc:  # driver 各自的錯誤型別不同,統一轉為可讀訊息
+        log.error("DB 連線或查詢失敗 app=%s table=%s host=%s:%s:%s",
+                  app.name, name, params["host"], params["port"], exc)
         return (
             f"DB 連線或查詢失敗({params['host']}:{params['port']}/{params['database']},"
             f"table={name}):{exc}。請確認 DB 是否啟動(BestHouse 為 docker compose up -d)。"

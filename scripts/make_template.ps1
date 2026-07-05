@@ -14,7 +14,7 @@ if ($OutDir -eq "") {
 
 # server 核心(通用,直接複製到模板的 rosetta/)
 $CoreFiles = @(
-    "kb_server.py", "kb_config.py", "code_search.py", "glossary.py",
+    "kb_server.py", "kb_config.py", "kb_log.py", "code_search.py", "glossary.py",
     "app_config.py", "db_config.py", "graph_db.py",
     "semantic_common.py", "semantic_search.py", "semantic_index.py"
 )
