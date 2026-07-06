@@ -1,12 +1,80 @@
-# Rosetta — 系統邏輯查詢 MCP(multi-AP)
+# Rosetta — 用自然語言問系統邏輯的知識庫(multi-AP MCP server)
 
-一台唯讀 MCP server 服務 N 個 AP:使用者用任何語言問系統邏輯,
-Claude 讀當下真實的 code / config / DB 後回答並附依據。
-目前管理的 AP:besthouse、enhancesql、zplviewer(見 `config/kb.config.yaml`)。
+讓**非工程師也能直接問系統邏輯**:「這個分數怎麼算的?」「篩選門檻是多少?」
+「為什麼這筆被刷掉?」——在 Claude 裡用任何語言發問,答案來自**當下真實的**
+程式碼、設定檔與 DB 現值,並且**一律附依據**(檔名:行號 / config key / DB 現值)。
 
-> 規格:`docs/SPEC.md`;架設:`docs/QUICKSTART.md`。
+一個團隊只要架**一台** Rosetta,就能服務團隊的 N 個 AP(系統);
+「問題屬於哪個 AP」由 Claude 自動路由。全程**唯讀**,不動任何 AP 的東西。
 
-## 工具(7 個,全部唯讀)
+> 架構規格:`docs/SPEC.md`;架設指南:`docs/QUICKSTART.md`;
+> 通用模板:`nl-query-kb-template/`(由 `scripts/make_template.ps1` 產生)。
+
+## 它能回答什麼
+
+| 問題類型 | 例子 | 答案來源 |
+|---|---|---|
+| 公式與規則實作 | 「不含車位單價怎麼算?」 | 原始碼(語意檢索,附檔名:行號) |
+| 設定現值 | 「評分權重現在是多少?」 | DB 設定表**即時查詢**(migration 裡的是舊值) |
+| 系統設定 | 「連的是哪個資料庫?」 | application*.yml(密碼等敏感值自動遮罩) |
+| 影響範圍 | 「這個公式被誰使用?」 | codegraph 呼叫圖(callers/callees) |
+| 跨系統探索 | 「哪個系統有產生條碼?」 | 跨 AP 聯合查詢(discovery) |
+
+## 運作流程
+
+使用者問不清楚時,Rosetta 會提供「歧義訊號」讓 Claude **先確認再回答**,
+而不是猜一個方向答錯。以真實案例走一遍:
+
+```mermaid
+sequenceDiagram
+    actor U as 使用者
+    participant C as Claude
+    participant R as Rosetta(唯讀 MCP)
+    participant AP as AP 資產(code / yml / DB)
+
+    U->>C: 竹科悅揚的不含車位單價怎麼算?
+    C->>R: lookup_term(不含車位單價)
+    R-->>C: IT 對照:calculatePricePerPingWithoutParking、HOUSE 表欄位
+    C->>R: search_code(公式)
+    R->>AP: 語意索引 + 讀原始碼
+    R-->>C: 公式原始碼(HouseService.java:321-341)
+    C->>R: query_db_config(HOUSE, filter: NICKNAME=竹科悅揚)
+    R->>AP: SELECT(白名單表 + 參數繫結)
+    R-->>C: 同名資料 4 筆
+    C->>U: 系統裡有 4 筆「竹科悅揚」,你問的是哪一筆?(列選項)
+    U->>C: id 38(8樓 3房)
+    C->>U: 公式 + 該筆現值代入 = 67.37 萬/坪(附檔名:行號與 DB 依據)
+```
+
+## 核心能力
+
+1. **業務用語對照(glossary)**:「權重」「被刷掉」這類口語 → 精確的
+   class/欄位/config key,每 AP 一份 YAML,缺詞再補;
+   防腐化 lint 自動檢測 rename 造成的失效條目。
+2. **多語語意檢索**:本地 embedding(離線、不外送),口語提問可同時命中
+   英文 identifier 與中文註解;索引未建好前自動以 grep 墊檔,當天可用。
+3. **呼叫鏈結構**:codegraph 圖索引,回答「被誰用/用了誰/改了影響誰」。
+4. **現值查詢**:application*.yml 與 DB 設定表即時讀取——權重、門檻這類
+   邏輯存在 DB,只有現值可信;支援受限過濾精準取單筆(白名單 + 參數繫結)。
+5. **歧義釐清**:glossary 多義、檢索分散、查無結果、DB 多筆同名四種訊號,
+   引導 Claude 以 KB 真實候選做「選項式反問」——清楚就不問,最多問一次。
+6. **跨 AP 探索**:`app="all"` 一次掃所有系統(每 AP 2 筆位置),
+   找到歸屬後切回單一 AP 深查。
+7. **唯讀安全**:不寫檔、不執行;DB 只 SELECT 白名單表(個資表明示排除)、
+   敏感 config 值遮罩、防目錄穿越、HTTP 模式 Bearer 認證。
+
+## 接入你的 AP 要做什麼
+
+| 準備項 | 成本 |
+|---|---|
+| kb.config.yaml 加一個區塊(路徑、DB 白名單) | 約 10 分鐘 |
+| DB 唯讀帳號(只授權白名單表 SELECT) | 看 DBA |
+| 對照表 `config/glossary/<app>.yaml` | 骨架自動萃取,缺詞再補 |
+| 索引(codegraph + 語意) | `scripts/index_all.py` 批次,掛排程 |
+
+詳細步驟見 `docs/QUICKSTART.md`;tool 數固定 7 個,不隨 AP 數成長。
+
+## 工具一覽(7 個,全部唯讀)
 
 | 工具 | 說明 |
 |------|------|
@@ -20,8 +88,7 @@ Claude 讀當下真實的 code / config / DB 後回答並附依據。
 
 `app` 參數:單一 AP 時可省略;`lookup_term` / `search_code` 可帶 `"all"` 做
 跨 AP 探索(discovery:分組、每 AP 2 筆位置、只走 semantic;確認歸屬後切回
-單一 app 深查)。唯讀保證:不寫檔、不執行、DB 只 SELECT 白名單表、
-codegraph.db 以 read-only 開啟。
+單一 app 深查)。
 
 ## 專案結構
 
@@ -36,10 +103,11 @@ rosetta/               server 核心(MCP 層與檢索引擎)
   code_search.py       grep 引擎(auto 的自動墊檔:索引未就緒/損壞時)
   app_config.py        application*.yml 解析(local 覆蓋 base、敏感遮罩)
   db_config.py         DB 設定表查詢(mariadb 實測;oracle 就緒未實測)
+  kb_log.py            logging(stderr + 可選檔案;stdio 的 stdout 是協定通道)
 scripts/               維運腳本
   index_all.py         批次索引(--pull / --rebuild / --app;附帶 glossary lint)
   glossary_lint.py     對照表防腐化檢測(it_terms ↔ codegraph/config/白名單)
-  log_report.py        log 彙整報表(用量/S1~S3 統計/glossary 補詞候選)
+  log_report.py        log 彙整報表(用量/歧義訊號統計/glossary 補詞候選)
   eval_e2e.py          E2E 自動驗收(headless claude 逐題實測 + 判分)
   extract_glossary.py  對照表骨架萃取(--app)
   eval_retrieval.py    embedding 模型評測(eval/ 題庫)

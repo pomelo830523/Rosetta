@@ -63,10 +63,8 @@
       multi-AP:無索引 AP 略過、glossary 分組隔離 → 15/15
 - [x] 實測跨 AP 路由:「產生條碼」→ zplviewer detectBarcodes(0.92~0.94)
 
-## Backlog — 變更歷史查詢(SPEC §4.10;git 量體評估中,暫不排程)
-
-- [ ] 決策:輸出策略(只回 commit 訊息 vs -L 行範圍 vs 指定 commit 看 diff)
-- [ ] 決策後:get_change_history tool + 截斷 + selftest
+## 決定不做(記錄於 SPEC §6 非目標)
+- 變更歷史查詢(get_change_history):git 歷史量體風險 > 價值,2026-07-06 定案不做
 
 ## Phase 9 — query_db_config 受限過濾 ✅(2026-07-05,SPEC §4.4)
 

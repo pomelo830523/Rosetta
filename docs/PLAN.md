@@ -97,12 +97,6 @@
   雜訊分(~0.82),正確路由。selftest 50/50(新增 5 項)、
   multi-AP 15/15(新增 2 項:無索引 AP 略過、glossary 分組隔離)。
 
-## Backlog — 變更歷史查詢(SPEC §4.10,git 量體評估中)
-
-- `get_change_history` 包 git log;「何時改、為何改」是知識庫缺的時間維度。
-- 卡點:大 repo 的 log -p 量體會灌爆對話,先定截斷策略(只回 commit 訊息?
-  -L 行範圍?)再排程。
-
 ## 風險
 
 | 風險 | 緩解 |
