@@ -33,10 +33,37 @@
 - [x] instructions 第 7 條(改後需重啟 server;模板已重產)
 - [x] selftest 加 6 項:S1 觸發/不誤觸發、S2 觸發/贏家/同 class、S3 清單 → 33/33
 
-驗收與調校(待跑):
-- [ ] eval 增模糊題 5 題(如「分數怎麼算」「為什麼被刷掉」「竹科悅揚單價」),
-      E2E 驗:是否先釐清、選項是否來自 KB 候選、釐清後是否命中正確來源
-- [ ] 既有清晰 10 題重跑:誤觸發反問 ≤ 1/10;超標則調 S2 門檻(Δ、模組數)
+驗收與調校:
+- [x] eval 模糊題 5 題(eval/questions-vague.yaml;S4/S1/不誤觸發等情境)
+- [ ] 正式跑 `scripts/eval_e2e.py --set all`(清晰 10 + 模糊 5):
+      模糊題釐清率、清晰題誤觸發 ≤ 1/10;超標則調 S2 門檻(Δ、模組數)。
+      注意:請在**獨立終端機**跑(不要從 Claude Code session 內啟動——
+      同帳號併發搶額度會被 rate-limit 拖到逾時;煙霧測試已驗證管線可通)
+
+## Phase 10 — 維運與品質自動化 ✅(2026-07-06)
+
+- [x] glossary lint(scripts/glossary_lint.py;index_all 附帶執行;
+      besthouse 31 條 0 DEAD、1 warn 為概念性名詞 MariaDB,可接受)
+- [x] log 報表(scripts/log_report.py:用量/耗時、S1~S3、S3 補詞候選、拒絕事件)
+- [x] E2E 自動驗收腳本(scripts/eval_e2e.py:headless claude + 啟發式判分;
+      煙霧測試通過管線,完整 15 題待正式跑——見 Phase 8 驗收項)
+- [x] HTTP GET /health(免認證監控;實測回 3 AP 索引狀態)
+- [x] read_source start_line/end_line 範圍節錄
+- [x] code_search 支援 *.html(行窗切塊)
+- [x] selftest 新增 5 項 → 45/45;multi-AP 13/13 無回歸
+
+## Phase 11 — 跨 AP 聯合查詢(SPEC §4.9;設計已定,待使用者確認後實作)
+
+- [ ] search_code / lookup_term 支援 app="all":逐 AP 分組、每 AP top 2、
+      query 向量嵌一次重用、只走 semantic(未建索引 AP 標註略過)
+- [ ] instructions 更新:all 僅供 discovery,找到歸屬必須切回單一 app;
+      DB/config/read_source/get_structure 不開放 all
+- [ ] selftest:all 模式分組輸出、單 AP 行為不變、fixture 隔離不被 all 打破
+
+## Backlog — 變更歷史查詢(SPEC §4.10;git 量體評估中,暫不排程)
+
+- [ ] 決策:輸出策略(只回 commit 訊息 vs -L 行範圍 vs 指定 commit 看 diff)
+- [ ] 決策後:get_change_history tool + 截斷 + selftest
 
 ## Phase 9 — query_db_config 受限過濾 ✅(2026-07-05,SPEC §4.4)
 

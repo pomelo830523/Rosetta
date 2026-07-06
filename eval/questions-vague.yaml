@@ -1,0 +1,36 @@
+# 模糊題庫(Phase 8 驗收):使用者「問不清楚」時,Claude 應先做選項式釐清。
+# 欄位:
+#   id / question    題目(besthouse)
+#   expect           clarify = 應先反問(含問句 + 至少 2 個來自 KB 的候選)
+#                    answer  = 可直接回答(驗證不誤觸發反問)
+#   candidates       expect=clarify 時:反問中應出現的候選詞(至少命中 2 個)
+#   must_include     expect=answer 時:回答應包含的關鍵字(任一組即可,子清單=或)
+# 判定為啟發式(eval_e2e.py),正式驗收可再人工複核。
+
+- id: v1
+  question: 竹科悅揚的不含車位單價是多少?
+  expect: clarify           # HOUSE 表有 4 筆同名(S4),應反問是哪一筆
+  candidates: ["13", "25", "31", "38", "8樓", "13樓", "2888", "2088", "1998", "2868"]
+
+- id: v2
+  question: 房子為什麼被刷掉?
+  expect: clarify           # 未指明哪一間;應反問或列出被淘汰清單讓使用者選
+  candidates: ["富春居", "金山朵夫", "興世代", "新巢代", "菁英典藏", "東方文華", "哪一"]
+
+- id: v3
+  question: 那個用 AI 自動輸入的功能是怎麼設定的?
+  expect: answer            # 模糊指涉但 KB 可唯一對應(AI 匯入/gemini),不應反問
+  must_include:
+    - ["gemini", "Gemini"]
+    - ["AiImport", "api-key", "匯入"]
+
+- id: v4
+  question: 評分的權重可以在哪裡改?
+  expect: answer            # 應答 DB RATING_DIMENSION(現值在 DB),不從程式碼猜
+  must_include:
+    - ["RATING_DIMENSION"]
+
+- id: v5
+  question: 單價的規則是什麼?
+  expect: clarify           # 含/不含車位兩種單價 + 篩選門檻,方向不明;反問或分列皆可
+  candidates: ["不含車位", "含車位", "80", "上限", "哪一"]

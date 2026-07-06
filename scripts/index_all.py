@@ -78,6 +78,11 @@ def main() -> int:
         except Exception as exc:  # 單一 AP 失敗不擋其他 AP(批次跑一晚的前提)
             print(f"[{app.name}] 語意索引失敗:{exc}")
             failures += 1
+            continue
+        # glossary 防腐化檢測:DEAD 條目只警示不擋索引(對照表修復是人工作業)
+        import glossary_lint
+        _, lint_lines = glossary_lint.lint_app(app)
+        print("\n".join(lint_lines))
 
     print(f"\n完成:{len(apps) - failures}/{len(apps)} 個 AP 成功")
     return 1 if failures else 0

@@ -14,7 +14,7 @@ Claude 讀當下真實的 code / config / DB 後回答並附依據。
 | `lookup_term(query, app)` | 業務用語 → IT 對照(class/method/DB 欄位/config key) |
 | `search_code(query, top_k, app, include_call_chain)` | 語意檢索原始碼,回 symbol 原文 |
 | `get_structure(symbol, app)` | callers / callees / 定義位置(codegraph 圖) |
-| `read_source(relative_path, app)` | 讀完整檔案(限該 AP 專案根內) |
+| `read_source(relative_path, app, start_line, end_line)` | 讀檔案或行範圍節錄(限該 AP 專案根內) |
 | `get_app_config(key_pattern, app)` | 查 `application*.yml`;敏感值遮罩 |
 | `query_db_config(table, limit, app, filter_column, filter_op, filter_value)` | 查 DB 設定表現值;白名單 + SELECT only;受限過濾(eq/contains,欄位名驗證、值繫結) |
 
@@ -35,7 +35,10 @@ rosetta/               server 核心(MCP 層與檢索引擎)
   app_config.py        application*.yml 解析(local 覆蓋 base、敏感遮罩)
   db_config.py         DB 設定表查詢(mariadb 實測;oracle 就緒未實測)
 scripts/               維運腳本
-  index_all.py         批次索引(--pull / --rebuild / --app)
+  index_all.py         批次索引(--pull / --rebuild / --app;附帶 glossary lint)
+  glossary_lint.py     對照表防腐化檢測(it_terms ↔ codegraph/config/白名單)
+  log_report.py        log 彙整報表(用量/S1~S3 統計/glossary 補詞候選)
+  eval_e2e.py          E2E 自動驗收(headless claude 逐題實測 + 判分)
   extract_glossary.py  對照表骨架萃取(--app)
   eval_retrieval.py    embedding 模型評測(eval/ 題庫)
   setup.ps1            venv + 依賴 + .mcp.json 範本 + selftest
@@ -72,6 +75,7 @@ AP 清單是啟動時組好的)。環境變數:`KB_TRANSPORT`、`KB_HTTP_HOST/PO
 log:一律走 stderr(stdio 模式 stdout 是 MCP 協定通道;Claude Code 收進
 mcp-logs),`KB_LOG_FILE` 設定時另寫檔案。INFO 記 tool 呼叫/歧義訊號(S1~S3),
 WARNING 記拒絕事件(白名單/敏感表/filter/路徑穿越/401),ERROR 記 DB 失敗。
+彙整報表:`scripts\log_report.py`。HTTP 模式另有 `GET /health`(免認證監控)。
 
 ## 注意
 

@@ -70,6 +70,34 @@
   未知 op/萬用字元跳脫/截斷警示)→ 40/40;multi-AP 13/13 無回歸。
   Oracle 分支同步實作,維持「未實測」標註。
 
+## Phase 10 — 維運與品質自動化 ✅(2026-07-06)
+
+- **glossary lint**(`scripts/glossary_lint.py`):it_terms 對照 codegraph/config/
+  白名單檢測防腐化,`index_all.py` 每輪附帶執行;實測 besthouse 31 條 0 DEAD。
+- **log 報表**(`scripts/log_report.py`):tool 用量/耗時、S1~S3 統計
+  (S2 觸發率 = Δ 調校依據)、S3 空手 query = glossary 補詞候選、拒絕事件。
+- **E2E 自動驗收**(`scripts/eval_e2e.py` + `eval/questions-vague.yaml` 5 題):
+  claude CLI headless 逐題實測 + 啟發式判分,輸出 eval/E2E-RESULT.md。
+  煙霧測試發現的真實訊號:haiku 對清晰題會過度反問(誤觸發統計有效);
+  完整 15 題驗收待正式跑(每題一個 Claude session,有成本)。
+- **小改進**:HTTP `GET /health`(免認證監控,回各 AP 索引狀態,已實測)、
+  `read_source` 加 start_line/end_line 範圍節錄(省對話額度)、
+  `code_search` 支援 `*.html`(Angular template 以 40 行視窗切塊)。
+- selftest 45/45(新增 5 項)、multi-AP 13/13。
+
+## Phase 11 — 跨 AP 聯合查詢(設計定案 SPEC §4.9,待確認後實作)
+
+- `search_code` / `lookup_term` 的 app 參數接受 `all`(discovery 模式):
+  逐 AP 分組回傳、每 AP top 2、query 向量嵌一次重用、只走 semantic。
+- 防護欄:`all` 僅供找不到歸屬時;找到後必須切回單一 app 深查;
+  DB/config/read_source/get_structure 不開放 all。
+
+## Backlog — 變更歷史查詢(SPEC §4.10,git 量體評估中)
+
+- `get_change_history` 包 git log;「何時改、為何改」是知識庫缺的時間維度。
+- 卡點:大 repo 的 log -p 量體會灌爆對話,先定截斷策略(只回 commit 訊息?
+  -L 行範圍?)再排程。
+
 ## 風險
 
 | 風險 | 緩解 |

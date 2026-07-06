@@ -8,7 +8,7 @@ import re
 
 from kb_config import AppContext
 
-SOURCE_GLOBS = ("*.java", "*.ts")
+SOURCE_GLOBS = ("*.java", "*.ts", "*.html")
 SKIP_DIRS = {"node_modules", "target", "dist", ".git", ".venv", ".angular"}
 CONTROL_KEYWORDS = (
     "if", "for", "while", "switch", "catch", "else",
@@ -102,6 +102,25 @@ def score(query: str, signature: str, body: str, extra_terms: set[str]) -> int:
     return total
 
 
+WINDOW_LINES = 40   # 無 {} 區塊結構的檔案(html template)以固定行窗切塊
+WINDOW_STEP = 30    # 相鄰視窗重疊 10 行,避免命中內容剛好被切在邊界
+
+
+def window_blocks(text: str) -> list[tuple[int, int, str, str]]:
+    """html 等無大括號結構的檔案:固定行窗切塊;首個非空行充當 signature。"""
+    lines = text.splitlines()
+    blocks = []
+    for start in range(0, len(lines), WINDOW_STEP):
+        chunk = lines[start:start + WINDOW_LINES]
+        signature = next((l.strip() for l in chunk if l.strip()), "")
+        if signature:
+            blocks.append((start + 1, min(start + WINDOW_LINES, len(lines)),
+                           signature, "\n".join(chunk)))
+        if start + WINDOW_LINES >= len(lines):
+            break
+    return blocks
+
+
 def truncate_body(body: str) -> str:
     lines = body.splitlines()
     if len(lines) <= MAX_BODY_LINES:
@@ -121,7 +140,9 @@ def search(query: str, top_k: int, extra_terms: set[str],
         except (UnicodeDecodeError, OSError):
             continue
         rel = path.relative_to(app.repo_root).as_posix()
-        for start, end, signature, body in extract_blocks(text):
+        blocks = (window_blocks(text) if path.suffix.lower() == ".html"
+                  else extract_blocks(text))
+        for start, end, signature, body in blocks:
             s = score(query, signature, body, extra_terms)
             if s > 0:
                 candidates.append((s, rel, start, end, body))

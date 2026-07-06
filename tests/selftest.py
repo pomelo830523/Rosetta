@@ -209,6 +209,28 @@ def main() -> None:
         out = db_config.query_table("HOUSE", 2, app)
         check("filter:達上限出現截斷警示", "結果可能不完整" in out)
 
+    # 11. Phase 10 維運強化:glossary lint / read_source 範圍 / health / html 切塊
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+    import glossary_lint
+    dead, lint_lines = glossary_lint.lint_app(app)
+    check("glossary lint:besthouse 無 DEAD 條目", dead == 0, lint_lines[-1])
+
+    out = kb_server.read_source(
+        "besthouse-backend/src/main/java/com/besthouse/service/HouseService.java",
+        app="besthouse", start_line=321, end_line=341)
+    check("read_source 範圍節錄:含節錄標頭與目標公式",
+          out.startswith("(節錄") and "calculatePricePerPingWithoutParking" in out)
+    check("read_source 範圍節錄:未回傳整檔", len(out) < 3000, f"{len(out)} 字元")
+
+    payload = kb_server._health_payload()
+    check("health payload:status ok 且列出全部 AP",
+          payload["status"] == "ok" and len(payload["apps"]) == len(config.apps))
+
+    html = "\n".join(f"<div>第 {i} 行</div>" for i in range(1, 101))
+    blocks = code_search.window_blocks(html)
+    check("html 行窗切塊:涵蓋整檔且行號正確",
+          blocks[0][0] == 1 and blocks[-1][1] == 100 and len(blocks) >= 3)
+
     print(f"\n結果:{sum(results)}/{len(results)} 通過")
     sys.exit(0 if all(results) else 1)
 

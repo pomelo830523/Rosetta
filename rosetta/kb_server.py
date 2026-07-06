@@ -359,14 +359,31 @@ def get_structure(symbol: str, app: str = "") -> str:
     return "\n\n".join(parts)
 
 
-_MAX_SOURCE_CHARS = 100_000  # read_source 單檔回傳上限,防超大檔灌爆對話 context
+_MAX_SOURCE_CHARS = 100_000  # read_source 單次回傳上限,防超大檔灌爆對話 context
+
+
+def _cap_source(text: str, relative_path: str, ctx) -> str:
+    if len(text) <= _MAX_SOURCE_CHARS:
+        return text
+    log.info("read_source 截斷 app=%s path=%s(%d 字元)",
+             ctx.name, relative_path, len(text))
+    total_lines = text.count("\n") + 1
+    return (text[:_MAX_SOURCE_CHARS]
+            + f"\n\n(內容過大,已截斷:共 {total_lines} 行/{len(text)} 字元,"
+            f"僅回傳前 {_MAX_SOURCE_CHARS} 字元。建議用 start_line/end_line "
+            "指定範圍,或以 search_code / get_structure 鎖定目標 symbol。)")
 
 
 @mcp.tool()
 @_logged
-def read_source(relative_path: str, app: str = "") -> str:
-    """讀取指定 AP 原始碼檔案的完整內容。relative_path 以該 AP 的專案根為基準,
-    例如 besthouse-backend/src/main/java/com/besthouse/service/HouseService.java"""
+def read_source(relative_path: str, app: str = "",
+                start_line: int = 0, end_line: int = 0) -> str:
+    """讀取指定 AP 原始碼檔案內容。relative_path 以該 AP 的專案根為基準,
+    例如 besthouse-backend/src/main/java/com/besthouse/service/HouseService.java
+
+    start_line / end_line(1-based,皆含)可只讀片段——search_code / get_structure
+    已給行號時建議帶上,省對話額度;預設 0 = 整檔(過大會截斷)。
+    """
     ctx, error = _resolve(app)
     if ctx is None:
         return error
@@ -379,15 +396,15 @@ def read_source(relative_path: str, app: str = "") -> str:
     if not target.is_file():
         return f"找不到檔案:{relative_path}(app={ctx.name})"
     text = target.read_text(encoding="utf-8", errors="replace")
-    if len(text) > _MAX_SOURCE_CHARS:
-        log.info("read_source 截斷 app=%s path=%s(%d 字元)",
-                 ctx.name, relative_path, len(text))
-        total_lines = text.count("\n") + 1
-        return (text[:_MAX_SOURCE_CHARS]
-                + f"\n\n(檔案過大,已截斷:共 {total_lines} 行/{len(text)} 字元,"
-                f"僅回傳前 {_MAX_SOURCE_CHARS} 字元。建議改用 search_code 或 "
-                "get_structure 鎖定目標 symbol。)")
-    return text
+    if start_line > 0:
+        lines = text.splitlines()
+        if start_line > len(lines):
+            return f"start_line {start_line} 超過檔案行數 {len(lines)}(app={ctx.name})"
+        end = min(len(lines), end_line) if end_line > 0 else len(lines)
+        piece = "\n".join(lines[start_line - 1:end])
+        header = f"(節錄 {relative_path}:{start_line}-{end},全檔共 {len(lines)} 行)\n"
+        return header + _cap_source(piece, relative_path, ctx)
+    return _cap_source(text, relative_path, ctx)
 
 
 @mcp.tool()
@@ -460,6 +477,52 @@ class _BearerTokenGuard:
         await self._app(scope, receive, send)
 
 
+def _health_payload() -> dict:
+    """GET /health 的內容:server 存活 + 各 AP 索引狀態(監控/排程檢查用)。"""
+    import json as json_mod
+    try:
+        config = kb_config.load_config()
+    except ValueError as exc:
+        return {"status": "config-error", "detail": str(exc)}
+    from semantic_common import index_paths
+    apps = []
+    for app in config.apps:
+        paths = index_paths(app)
+        entry = {
+            "name": app.name,
+            "repo": app.repo_root.is_dir(),
+            "codegraph": graph_db.available(app),
+            "semantic": paths.all_exist(),
+            "built_at": None,
+        }
+        if entry["semantic"]:
+            try:
+                entry["built_at"] = json_mod.loads(
+                    paths.state.read_text(encoding="utf-8")).get("built_at")
+            except (OSError, ValueError):
+                pass
+        apps.append(entry)
+    return {"status": "ok", "apps": apps}
+
+
+class _HealthEndpoint:
+    """GET /health:免認證(刻意,監控用;僅索引狀態,無敏感資料),其餘透傳。"""
+
+    def __init__(self, app):
+        self._app = app
+
+    async def __call__(self, scope, receive, send):
+        if (scope["type"] == "http" and scope.get("path") == "/health"
+                and scope.get("method") == "GET"):
+            import json as json_mod
+            body = json_mod.dumps(_health_payload(), ensure_ascii=False).encode()
+            await send({"type": "http.response.start", "status": 200,
+                        "headers": [(b"content-type", b"application/json; charset=utf-8")]})
+            await send({"type": "http.response.body", "body": body})
+            return
+        await self._app(scope, receive, send)
+
+
 def _run_http() -> None:
     """集中部署:streamable HTTP(使用者端的 Connector URL 指到 /mcp)。"""
     import uvicorn
@@ -469,6 +532,7 @@ def _run_http() -> None:
         app = _BearerTokenGuard(app, token)
     else:
         log.warning("KB_AUTH_TOKEN 未設定,HTTP 模式無認證——僅限信任內網使用。")
+    app = _HealthEndpoint(app)  # health 在 token guard 外層,監控不需帶 token
     log.info("啟動 transport=http %s:%d auth=%s",
              mcp.settings.host, mcp.settings.port, "bearer" if token else "無")
     uvicorn.run(app, host=mcp.settings.host, port=mcp.settings.port)
