@@ -85,12 +85,17 @@
   `code_search` 支援 `*.html`(Angular template 以 40 行視窗切塊)。
 - selftest 45/45(新增 5 項)、multi-AP 13/13。
 
-## Phase 11 — 跨 AP 聯合查詢(設計定案 SPEC §4.9,待確認後實作)
+## Phase 11 — 跨 AP 聯合查詢 ✅(2026-07-06,SPEC §4.9)
 
 - `search_code` / `lookup_term` 的 app 參數接受 `all`(discovery 模式):
-  逐 AP 分組回傳、每 AP top 2、query 向量嵌一次重用、只走 semantic。
-- 防護欄:`all` 僅供找不到歸屬時;找到後必須切回單一 app 深查;
-  DB/config/read_source/get_structure 不開放 all。
+  逐 AP 分組回傳、每 AP top 2 只回位置不含內文、query 向量按 embedding model
+  分組只嵌一次、只走 semantic(未建索引 AP 標註略過,不做跨 AP grep)。
+- 防護欄:instructions #1 更新——`all` 僅供找不到歸屬時;找到後必須切回
+  單一 app 深查;DB/config/read_source/get_structure 不開放 all;
+  app name「all」列為 kb.config.yaml 保留字。
+- 實測:「哪裡有產生條碼的功能」→ zplviewer 0.94/0.92 明顯壓過其他 AP
+  雜訊分(~0.82),正確路由。selftest 50/50(新增 5 項)、
+  multi-AP 15/15(新增 2 項:無索引 AP 略過、glossary 分組隔離)。
 
 ## Backlog — 變更歷史查詢(SPEC §4.10,git 量體評估中)
 

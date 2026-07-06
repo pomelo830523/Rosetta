@@ -106,6 +106,13 @@ def main() -> None:
             "../../../../besthouse-backend/src/main/resources/application.yml", app="demo")
         check("demo 跨 AP 讀 besthouse 檔案被擋", "超出專案範圍" in out)
 
+        # 8. app="all" 跨 AP 聯合查詢(SPEC §4.9)之隔離
+        out = kb_server.search_code("運費怎麼算", app="all")
+        check("all:無語意索引的 AP 標註略過(不做跨 AP grep)", "demo:略過" in out)
+        out = kb_server.lookup_term("運費", app="all")
+        check("all:lookup_term 分組只在 demo 命中",
+              "calculateShippingFee" in out and "RATING_DIMENSION" not in out)
+
     finally:
         kb_config.CONFIG_PATH = original_path
         kb_config._cache["stamp"] = None

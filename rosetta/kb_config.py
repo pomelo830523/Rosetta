@@ -105,6 +105,8 @@ def _parse_app(raw: dict, defaults: dict) -> AppContext:
     name = str(raw.get("name") or "").strip()
     if not name:
         raise ValueError("kb.config.yaml 有 app 區塊缺少 name。")
+    if name.lower() == "all":
+        raise ValueError("app name「all」為保留字(跨 AP 聯合查詢用,SPEC §4.9),請改名。")
     if not raw.get("repo_root"):
         raise ValueError(f"app「{name}」缺少 repo_root。")
 

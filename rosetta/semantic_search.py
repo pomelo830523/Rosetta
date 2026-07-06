@@ -45,6 +45,11 @@ def index_info(app: AppContext) -> str:
     return f"model={state.get('model')}, built_at={state.get('built_at')}"
 
 
+def index_model(app: AppContext) -> str:
+    """該 app 索引所用的 embedding model(all 模式跨 AP 重用 query 向量的分組鍵)。"""
+    return _load(app)["state"].get("model") or ""
+
+
 def _load(app: AppContext) -> dict:
     """載入該 app 的索引,以 state.json 的 mtime 做快取失效(index 重建後免重啟 server)。"""
     paths = index_paths(app)
@@ -88,14 +93,17 @@ def literal_boost(name_lower: str, typed_words: set[str], extra_terms: set[str])
     return min(_TYPED_WORD_BOOST * typed_hits, 0.24) + min(_GLOSSARY_WORD_BOOST * gloss_hits, 0.20)
 
 
-def search(query: str, top_k: int, extra_terms: set[str],
-           app: AppContext) -> list[SemanticHit]:
+def search(query: str, top_k: int, extra_terms: set[str], app: AppContext,
+           query_vec: np.ndarray | None = None) -> list[SemanticHit]:
+    """query_vec 可由呼叫端預先算好傳入(app="all" 跨 AP 查詢時,
+    同 model 的 AP 共用一次嵌入);None 則以該 app 索引的 model 現算。"""
     data = _load(app)
     meta, vectors, state = data["meta"], data["vectors"], data["state"]
     if not meta:
         return []
 
-    query_vec = embed_texts([query], kind="query", model_name=state.get("model"))[0]
+    if query_vec is None:
+        query_vec = embed_texts([query], kind="query", model_name=state.get("model"))[0]
     scores = vectors @ query_vec  # 向量已 L2 正規化,內積即 cosine
 
     typed_words = query_words(query)

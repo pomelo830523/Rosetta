@@ -52,13 +52,16 @@
 - [x] code_search 支援 *.html(行窗切塊)
 - [x] selftest 新增 5 項 → 45/45;multi-AP 13/13 無回歸
 
-## Phase 11 — 跨 AP 聯合查詢(SPEC §4.9;設計已定,待使用者確認後實作)
+## Phase 11 — 跨 AP 聯合查詢 ✅(2026-07-06,SPEC §4.9)
 
-- [ ] search_code / lookup_term 支援 app="all":逐 AP 分組、每 AP top 2、
-      query 向量嵌一次重用、只走 semantic(未建索引 AP 標註略過)
-- [ ] instructions 更新:all 僅供 discovery,找到歸屬必須切回單一 app;
+- [x] search_code / lookup_term 支援 app="all":逐 AP 分組、每 AP top 2、
+      query 向量按 model 分組只嵌一次、只走 semantic(未建索引 AP 標註略過)
+- [x] instructions #1 更新:all 僅供 discovery,找到歸屬必須切回單一 app;
       DB/config/read_source/get_structure 不開放 all
-- [ ] selftest:all 模式分組輸出、單 AP 行為不變、fixture 隔離不被 all 打破
+- [x] app name「all」列為 kb.config.yaml 保留字(載入時 fail fast)
+- [x] selftest:all 分組輸出/命中/無內文/保留字 → 50/50;
+      multi-AP:無索引 AP 略過、glossary 分組隔離 → 15/15
+- [x] 實測跨 AP 路由:「產生條碼」→ zplviewer detectBarcodes(0.92~0.94)
 
 ## Backlog — 變更歷史查詢(SPEC §4.10;git 量體評估中,暫不排程)
 

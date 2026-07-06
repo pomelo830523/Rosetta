@@ -37,6 +37,9 @@ _INSTRUCTIONS = f"""本 server 是唯讀的「系統邏輯知識庫」,服務多
 1. 先判斷問題屬於哪個 AP,tools 都要帶 app 參數;不確定時先呼叫 list_apps
    看各系統描述,仍不確定就問使用者,不要跨 AP 亂猜。
    目前管理的 AP:{"、".join(f"{a.name}({a.description})" for a in _config.apps)}
+   從描述判斷不出歸屬時,search_code / lookup_term 可帶 app="all" 做跨 AP 探索
+   (discovery);**確認歸屬後必須切回該 app 深查**,回答不得混用不同 AP 的來源
+   而不標明。其餘工具(DB/config/read_source/get_structure)不接受 all。
 2. 檢索前先把使用者問題改寫成兩組檢索詞:zh 業務詞 + en IT 詞
    (語料是英文 identifier + 中文註解;使用者用任何語言提問都先這樣歸一化)。
 3. 業務用語先用 lookup_term 取得精確的 IT 對應(class/欄位/config key),
@@ -63,6 +66,12 @@ mcp = FastMCP(
 
 
 _resolve = kb_config.resolve_app
+
+ALL_APPS = "all"  # app 參數保留字:跨 AP 聯合查詢(SPEC §4.9,kb_config 禁用同名 app)
+
+
+def _is_all(app: str) -> bool:
+    return (app or "").strip().lower() == ALL_APPS
 
 
 def _logged(fn):
@@ -129,6 +138,24 @@ def _independent_concepts(query: str, matched: list) -> list:
     return independent
 
 
+def _lookup_term_all(query: str) -> str:
+    """跨 AP 對照表探索(SPEC §4.9):逐 AP 比對,只列有命中的 AP。"""
+    config = kb_config.load_config()
+    parts = []
+    for ctx in config.apps:
+        entries = glossary.load_glossary(ctx.glossary_path)
+        matched = glossary.match_entries(query, entries) if entries else []
+        if matched:
+            parts.append(f"## {ctx.name}({ctx.description})\n"
+                         + glossary.format_entries(matched))
+    log.info("discovery lookup_term all query=%s 命中 %d AP", kb_log.brief(query), len(parts))
+    if not parts:
+        return ("所有 AP 的 glossary 都沒有符合的條目。"
+                "可改用 search_code(app=\"all\")做跨 AP 語意探索。")
+    return ("(discovery 模式:確認歸屬後請切回單一 app 深查。)\n\n"
+            + "\n\n".join(parts))
+
+
 @mcp.tool()
 @_logged
 def lookup_term(query: str, app: str = "") -> str:
@@ -136,7 +163,10 @@ def lookup_term(query: str, app: str = "") -> str:
     回傳對應的 class/method/DB 欄位/config key 與說明,作為後續搜尋的錨點。
 
     找不到對照時建議直接用 search_code 以原詞搜尋。
+    app="all" = 跨 AP 探索(不確定問題屬於哪個系統時;確認後切回單一 app)。
     """
+    if _is_all(app):
+        return _lookup_term_all(query)
     ctx, error = _resolve(app)
     if ctx is None:
         return error
@@ -279,6 +309,43 @@ def _search_grep(query: str, top_k: int, extra_terms, matched_entries,
     return "\n\n".join(parts)
 
 
+def _search_all_apps(query: str) -> str:
+    """跨 AP 聯合查詢(SPEC §4.9 discovery 模式)。
+
+    逐 AP 分組、每 AP 最多 2 筆、只回位置不含程式碼內文;只走 semantic 引擎
+    (跨 AP grep 全掃延遲不可控),query 向量按 embedding model 分組只嵌一次。
+    """
+    try:
+        import semantic_search
+        from semantic_common import embed_texts
+    except ImportError:
+        return "跨 AP 探索需要語意引擎(fastembed 未安裝);請改逐一指定 app 查詢。"
+    config = kb_config.load_config()
+    vec_cache: dict[str, object] = {}
+    parts = ["(discovery 模式:每 AP 最多 2 筆、只走語意索引、不含程式碼內文。"
+             "確認歸屬後請切回單一 app 深查;不同 AP 的來源不可混用。)"]
+    for ctx in config.apps:
+        if not semantic_search.available(ctx):
+            parts.append(f"## {ctx.name}:略過(語意索引未就緒,無法參與跨 AP 探索)")
+            continue
+        extra_terms, _ = glossary.expand_query(query, ctx.glossary_path)
+        model = semantic_search.index_model(ctx)
+        if model not in vec_cache:
+            vec_cache[model] = embed_texts([query], kind="query", model_name=model)[0]
+        hits = semantic_search.search(query, 2, extra_terms, ctx,
+                                      query_vec=vec_cache[model])
+        if not hits:
+            parts.append(f"## {ctx.name}:無足夠相關的結果")
+            continue
+        lines = [f"## {ctx.name}({ctx.description})"]
+        lines += [f"- {h.file_path}:{h.start_line}-{h.end_line} — "
+                  f"{h.qualified_name}({h.kind},score={h.score})" for h in hits]
+        parts.append("\n".join(lines))
+    log.info("discovery search_code all query=%s(%d AP,%d 種 model)",
+             kb_log.brief(query), len(config.apps), len(vec_cache))
+    return "\n\n".join(parts)
+
+
 @mcp.tool()
 @_logged
 def search_code(query: str, top_k: int = 3, app: str = "",
@@ -290,7 +357,11 @@ def search_code(query: str, top_k: int = 3, app: str = "",
     會先用該 AP 的 glossary 把業務用語展開成 IT 詞加權。
     include_call_chain=True 時每個命中另附一層呼叫鏈摘要(不需要可關,省輸出)。
     適合問「某公式怎麼算」「某規則的實作在哪」。
+    app="all" = 跨 AP 探索(不確定問題屬於哪個系統時;每 AP 只回 2 筆位置,
+    確認歸屬後切回單一 app 深查)。
     """
+    if _is_all(app):
+        return _search_all_apps(query)
     ctx, error = _resolve(app)
     if ctx is None:
         return error

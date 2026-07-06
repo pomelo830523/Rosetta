@@ -231,6 +231,22 @@ def main() -> None:
     check("html 行窗切塊:涵蓋整檔且行號正確",
           blocks[0][0] == 1 and blocks[-1][1] == 100 and len(blocks) >= 3)
 
+    # 12. Phase 11 跨 AP 聯合查詢(app="all",SPEC §4.9)
+    out = kb_server.search_code("不含車位的每坪單價怎麼算", app="all")
+    check("all:各 AP 分組列出", all(f"## {n}" in out for n in config.app_names()))
+    check("all:besthouse 命中目標 symbol", "priceperpingwithoutparking" in out.lower())
+    check("all:discovery 不含程式碼內文", "```" not in out and "discovery" in out)
+    out = kb_server.lookup_term("權重", app="all")
+    check("all:lookup_term 只列有命中的 AP",
+          "besthouse" in out and "RATING_DIMENSION" in out
+          and "zplviewer" not in out)
+    try:
+        kb_config._parse("apps:\n  - name: all\n    repo_root: x\n")
+        reserved_ok = False
+    except ValueError as exc:
+        reserved_ok = "保留字" in str(exc)
+    check("app name「all」為保留字", reserved_ok)
+
     print(f"\n結果:{sum(results)}/{len(results)} 通過")
     sys.exit(0 if all(results) else 1)
 
