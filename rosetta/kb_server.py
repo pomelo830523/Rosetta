@@ -505,7 +505,8 @@ def query_db_config(table: str, limit: int = 50, app: str = "",
     白名單以外的表(含個資敏感表)一律拒絕。
 
     受限過濾:查特定對象(如某間房)時用 filter_column + filter_value 縮小範圍,
-    避免整表超過 limit 上限漏資料。filter_op:eq(精確)| contains(子字串)。
+    避免整表超過 limit 上限漏資料。filter_op 依成本擇一:eq(精確,優先)|
+    starts_with(前綴,吃得到索引)| contains(子字串,全表掃描,最後手段)。
     欄位名必須存在於該表(錯誤訊息會列可用欄位);單一條件,不支援 AND/OR。
     回傳中若有多筆符合使用者所指的對象(如同名資料),先以識別欄位列選項
     向使用者確認是哪一筆,不要自行挑一筆作答;確認後可用主鍵 eq 精準取回。

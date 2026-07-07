@@ -5,8 +5,12 @@
 driver:mariadb(pymysql,已實測)/ oracle(python-oracledb,**尚未實測**,見 SPEC §4.7)。
 
 受限過濾(SPEC §4.4):filter_column/filter_op/filter_value 組單一 WHERE 條件——
-欄位名必須存在於該表實際 schema、運算子只有 eq/contains、值一律參數繫結。
+欄位名必須存在於該表實際 schema、運算子只有 eq/starts_with/contains、值一律參數繫結。
 不是開放 WHERE:每個 SQL 組成都是封閉集合或繫結值。
+
+DB 保護:starts_with(LIKE '值%')吃得到索引,contains('%值%')必然全表掃描;
+另將執行時間上限下推到 DB 端(MariaDB max_statement_time / MySQL max_execution_time /
+Oracle call_timeout),慢查詢由 DB 自己殺,不是只切斷 client。
 """
 
 from dataclasses import dataclass
@@ -19,7 +23,8 @@ import kb_log
 log = kb_log.setup()
 
 MAX_ROWS = 50
-VALID_FILTER_OPS = ("eq", "contains")
+VALID_FILTER_OPS = ("eq", "starts_with", "contains")
+MAX_STATEMENT_SECONDS = 10  # DB 端執行時間上限(與 client read_timeout 對齊)
 
 
 class FilterError(ValueError):
@@ -84,6 +89,16 @@ def _fetch_mariadb(params: dict, table: str, limit: int,
     )
     try:
         with connection.cursor() as cursor:
+            # 執行時間上限下推:client read_timeout 只切斷連線,DB 端查詢仍會跑完;
+            # 這裡讓 DB 自己殺超時查詢(MariaDB 用 max_statement_time 秒,
+            # MySQL 用 max_execution_time 毫秒;各自不認得對方的變數名,擇一生效)
+            for stmt in (f"SET SESSION max_statement_time={MAX_STATEMENT_SECONDS}",
+                         f"SET SESSION max_execution_time={MAX_STATEMENT_SECONDS * 1000}"):
+                try:
+                    cursor.execute(stmt)
+                except pymysql.err.Error:
+                    continue
+                break
             # table 名已通過白名單驗證,可安全內插;先取欄位清單驗證 filter_column
             cursor.execute(f"SELECT * FROM {table} LIMIT 0")
             columns = [desc[0] for desc in cursor.description]
@@ -92,7 +107,10 @@ def _fetch_mariadb(params: dict, table: str, limit: int,
                 column = _match_column(flt.column, columns)
                 if flt.op == "eq":
                     where, args = f" WHERE {column} = %s", (flt.value,)
-                else:
+                elif flt.op == "starts_with":
+                    where, args = (f" WHERE {column} LIKE %s",
+                                   (f"{_escape_like(flt.value)}%",))
+                else:  # contains
                     where, args = (f" WHERE {column} LIKE %s",
                                    (f"%{_escape_like(flt.value)}%",))
             cursor.execute(f"SELECT * FROM {table}{where} LIMIT %s", (*args, limit))
@@ -110,6 +128,8 @@ def _fetch_oracle(params: dict, table: str, limit: int,
         user=params["user"], password=params["password"],
         dsn=f"{params['host']}:{params['port']}/{params['database']}",
     )
+    # 執行時間上限(毫秒):超時由 driver 中斷該次呼叫,DB 端一併取消
+    connection.call_timeout = MAX_STATEMENT_SECONDS * 1000
     try:
         with connection.cursor() as cursor:
             cursor.execute(f"SELECT * FROM {table} FETCH FIRST 0 ROWS ONLY")
@@ -121,7 +141,10 @@ def _fetch_oracle(params: dict, table: str, limit: int,
                 if flt.op == "eq":
                     where = f" WHERE {column} = :v"
                     binds["v"] = flt.value
-                else:
+                elif flt.op == "starts_with":
+                    where = f" WHERE {column} LIKE :v ESCAPE '\\'"
+                    binds["v"] = f"{_escape_like(flt.value)}%"
+                else:  # contains
                     where = f" WHERE {column} LIKE :v ESCAPE '\\'"
                     binds["v"] = f"%{_escape_like(flt.value)}%"
             cursor.execute(

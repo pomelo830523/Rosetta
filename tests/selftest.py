@@ -201,6 +201,12 @@ def main() -> None:
                                     filter_op="contains", filter_value="富春居")
         check("filter:contains 命中子字串", "富春居13F" in out and "竹科悅揚" not in out)
         out = db_config.query_table("HOUSE", 50, app, filter_column="NICKNAME",
+                                    filter_op="starts_with", filter_value="富春居")
+        check("filter:starts_with 命中前綴", "富春居13F" in out and "竹科悅揚" not in out)
+        out = db_config.query_table("HOUSE", 50, app, filter_column="NICKNAME",
+                                    filter_op="starts_with", filter_value="春居")
+        check("filter:starts_with 中段字串不命中(前綴語意)", "沒有符合" in out)
+        out = db_config.query_table("HOUSE", 50, app, filter_column="NICKNAME",
                                     filter_op="between", filter_value="x")
         check("filter:未知 filter_op 被拒", "filter_op" in out)
         out = db_config.query_table("HOUSE", 50, app, filter_column="NICKNAME",
