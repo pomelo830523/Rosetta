@@ -7,7 +7,7 @@
 server_name: your-team-kb        # 顯示在 Claude 的 server 名稱
 
 apps:
-  - name: your-app               # app 參數值:取短英文名(小寫)
+  - name: your-app               # app 參數值:取短英文名(小寫);「all」為保留字不可用
     # description 給 Claude 做 AP 路由:寫使用者聽得懂的一句話,不要寫系統代號
     # (「請假與加班簽核系統」優於「HR-FLOW-SVC」)
     description: 一句話說明這個系統管什麼

@@ -78,8 +78,9 @@
   (S2 觸發率 = Δ 調校依據)、S3 空手 query = glossary 補詞候選、拒絕事件。
 - **E2E 自動驗收**(`scripts/eval_e2e.py` + `eval/questions-vague.yaml` 5 題):
   claude CLI headless 逐題實測 + 啟發式判分,輸出 eval/E2E-RESULT.md。
-  煙霧測試發現的真實訊號:haiku 對清晰題會過度反問(誤觸發統計有效);
-  完整 15 題驗收待正式跑(每題一個 Claude session,有成本)。
+  煙霧測試發現的真實訊號:haiku 對清晰題會過度反問(誤觸發統計有效)。
+  **後記(2026-07-07)**:腳本移除——rate limit 退避使單題耗時不可控,
+  自動化不可靠,驗收改人工(SPEC §6);模糊題題庫保留。
 - **小改進**:HTTP `GET /health`(免認證監控,回各 AP 索引狀態,已實測)、
   `read_source` 加 start_line/end_line 範圍節錄(省對話額度)、
   `code_search` 支援 `*.html`(Angular template 以 40 行視窗切塊)。

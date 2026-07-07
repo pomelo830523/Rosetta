@@ -56,8 +56,9 @@ sequenceDiagram
 3. **呼叫鏈結構**:codegraph 圖索引,回答「被誰用/用了誰/改了影響誰」。
 4. **現值查詢**:application*.yml 與 DB 設定表即時讀取——權重、門檻這類
    邏輯存在 DB,只有現值可信;支援受限過濾精準取單筆(白名單 + 參數繫結)。
-5. **歧義釐清**:glossary 多義、檢索分散、查無結果、DB 多筆同名四種訊號,
+5. **歧義釐清**:工具回傳附三種歧義訊號(glossary 多義、檢索分散、查無結果),
    引導 Claude 以 KB 真實候選做「選項式反問」——清楚就不問,最多問一次。
+   (流程圖中「DB 多筆同名」的反問是 MCP instructions 引導 Claude 從查詢結果自行辨識,非 server 偵測的訊號。)
 6. **跨 AP 探索**:`app="all"` 一次掃所有系統(每 AP 2 筆位置),
    找到歸屬後切回單一 AP 深查。
 7. **唯讀安全**:不寫檔、不執行;DB 只 SELECT 白名單表(個資表明示排除)、
@@ -84,7 +85,7 @@ sequenceDiagram
 | `get_structure(symbol, app)` | callers / callees / 定義位置(codegraph 圖) |
 | `read_source(relative_path, app, start_line, end_line)` | 讀檔案或行範圍節錄(限該 AP 專案根內) |
 | `get_app_config(key_pattern, app)` | 查 `application*.yml`;敏感值遮罩 |
-| `query_db_config(table, limit, app, filter_column, filter_op, filter_value)` | 查 DB 設定表現值;白名單 + SELECT only;受限過濾(eq/contains,欄位名驗證、值繫結) |
+| `query_db_config(table, limit, app, filter_column, filter_op, filter_value)` | 查 DB 設定表現值;白名單 + SELECT only;受限過濾(eq/starts_with/contains,欄位名驗證、值繫結);DB 端 10s 執行上限 |
 
 `app` 參數:單一 AP 時可省略;`lookup_term` / `search_code` 可帶 `"all"` 做
 跨 AP 探索(discovery:分組、每 AP 2 筆位置、只走 semantic;確認歸屬後切回
@@ -108,7 +109,6 @@ scripts/               維運腳本
   index_all.py         批次索引(--pull / --rebuild / --app;附帶 glossary lint)
   glossary_lint.py     對照表防腐化檢測(it_terms ↔ codegraph/config/白名單)
   log_report.py        log 彙整報表(用量/歧義訊號統計/glossary 補詞候選)
-  eval_e2e.py          E2E 自動驗收(headless claude 逐題實測 + 判分)
   extract_glossary.py  對照表骨架萃取(--app)
   eval_retrieval.py    embedding 模型評測(eval/ 題庫)
   setup.ps1            venv + 依賴 + .mcp.json 範本 + selftest

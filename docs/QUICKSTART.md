@@ -1,7 +1,7 @@
 # QUICKSTART — 團隊架設指南
 
 > 對象:幫團隊架 NL Query KB 的工程師/管理員。
-> 架構規格:[SPEC.md](SPEC.md)。模板:`nl-query-kb-template/`(由 `scripts/make_template.ps1` 產生)。
+> 架構規格:[SPEC.md](SPEC.md)。
 
 ## 原則
 
@@ -30,34 +30,61 @@
 
 ## 架設步驟
 
-### 1. 取得模板,跑 setup
+### 0. 取得模板
+
+server code 的**單一事實來源是 Rosetta 母站 repo**;模板 `nl-query-kb-template/`
+由母站維護者執行 `scripts\make_template.ps1` 產生——含通用 server code
+(`rosetta/`、`scripts/`)與空白設定範本,**不含**母站自己的 AP 設定、
+對照表與題庫。取得方式二擇一:
+
+- 向 Rosetta 維護團隊索取最新模板;或
+- 自行 clone Rosetta repo 後執行:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File scripts\make_template.ps1
+  # 輸出到 repo 旁的 nl-query-kb-template\(可用 -OutDir 指定位置)
+  ```
+
+把模板放上團隊的內部伺服器,**建議初始化成團隊自己的 git repo**——
+之後填的 `config\kb.config.yaml` 與 `config\glossary\` 是團隊資產,要進版控;
+`.venv/`、`.semantic/` 等產生物已在模板附的 `.gitignore` 排除。
+
+### 1. 跑 setup
 
 ```powershell
 Copy-Item config\kb.config.yaml.example config\kb.config.yaml
-powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # venv + 依賴 + .mcp.json + selftest
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # venv + 依賴 + .mcp.json 範本
 ```
+
+模板不含 selftest(那是母站針對它管的 AP 寫的),setup 最後一步顯示
+「無 selftest,略過」屬正常;建議上線前仿母站的 `tests/selftest.py`
+為你的 AP 寫一份,驗證項目照抄再改斷言即可。
 
 ### 2. 填 config/kb.config.yaml(每 AP 一個區塊)
 
+路徑規則:`repo_root` 相對於 kb server 專案根(`config/` 的上一層);
+`search_dirs` / `resources_dir` / `entity_dir` 相對於 repo_root;
+`glossary` 相對於 `config/` 目錄。
+
 ```yaml
 apps:
-  - name: besthouse
-    description: 房屋喜好評估系統——房屋篩選、評分與權重   # Claude 路由依據
-    repo_root: ..
-    search_dirs: [besthouse-backend/src, besthouse-frontend/src]
-    resources_dir: besthouse-backend/src/main/resources
-    entity_dir: besthouse-backend/src/main/java/com/besthouse/entity
-    glossary: glossary.yaml
+  - name: your-app               # app 參數值,短英文小寫;「all」為保留字不可用
+    description: 一句話說明這個系統管什麼   # Claude 路由依據,寫使用者聽得懂的話
+    repo_root: ../your-app       # 該 AP 在伺服器上的 checkout 路徑
+    search_dirs: [backend/src, frontend/src]
+    resources_dir: backend/src/main/resources
+    entity_dir: backend/src/main/java/com/yourco/entity   # glossary 萃取用,可省略
+    glossary: glossary/your-app.yaml
     db:
-      driver: mariadb
-      table_whitelist: [RATING_DIMENSION, FILTER_RULE]
+      driver: mariadb            # mariadb | oracle(oracle 程式就緒但未實測)
+      table_whitelist: [YOUR_CONFIG_TABLE]
       sensitive_tables: {MEMBER: 含個資,排除}
 engine: auto
 ```
 
 - `description` 寫使用者聽得懂的一句話(路由準度取決於它)。
 - `table_whitelist` 只放業務邏輯設定表;個資表一律不放(server 端強制)。
-- 編輯即時生效,不需重啟。
+- 編輯即時生效,不需重啟;**例外:新增/移除 AP 需重啟 server**
+  (MCP instructions 的 AP 清單是啟動時組好的)。
 
 ### 3. 建索引
 
@@ -76,19 +103,21 @@ codegraph status        # 確認索引完成
 
 ```powershell
 .\.venv\Scripts\python.exe -X utf8 scripts\index_all.py --pull
-# 逐 AP 自動執行:git pull → codegraph sync → 語意索引增量
+# 逐 AP 自動執行:git pull → codegraph sync → 語意索引增量 → glossary lint
 # 沒建過圖的 AP 會列出提示(回到 3a),不擋其他 AP
 ```
 
-`.venv/`、`.semantic/`、`.codegraph/` 進 `.gitignore`。
+gitignore 歸屬:`.venv/`、`.semantic/` 在 **kb server repo**(模板已附);
+`.codegraph/` 在**各 AP repo**(請各 AP 團隊自行加入)。
 
 ### 4. 填對照表(缺詞再補)
 
 ```powershell
-.\.venv\Scripts\python.exe -X utf8 scripts\extract_glossary.py --app besthouse
+.\.venv\Scripts\python.exe -X utf8 scripts\extract_glossary.py --app your-app
 ```
 
-從骨架挑高頻業務詞填 `config/glossary/<app>.yaml`(只需中文、只存名詞對應不存公式):
+從骨架挑高頻業務詞填 `config/glossary/<app>.yaml`(只需中文、只存名詞
+對應不存公式)。未設定 `entity_dir` 的 AP 沒有骨架可萃取,直接手寫即可:
 
 ```yaml
 - term: 房子分數
@@ -103,8 +132,12 @@ codegraph status        # 確認索引完成
 $env:KB_TRANSPORT = "http"
 $env:KB_HTTP_HOST = "0.0.0.0"          # KB_HTTP_PORT 預設 8600
 $env:KB_AUTH_TOKEN = "<team-token>"    # 不設 = 無認證,僅限信任內網
+$env:KB_LOG_FILE  = "<路徑>\kb.log"    # 選填:log 落檔,供 log_report 彙整
 .\.venv\Scripts\python.exe -X utf8 rosetta\kb_server.py
 ```
+
+啟動後先驗活:`curl http://localhost:8600/health`——免認證,回各 AP 的
+repo / codegraph / 語意索引狀態與 built_at。
 
 驗收(每個重點 AP 3+1 題):code 邏輯題附檔名:行號、DB 題回**現值**、
 config 題密碼有遮罩、模糊問法路由到對的 AP。通過後把 Connector URL
@@ -118,6 +151,16 @@ claude mcp add --transport http rosetta http://localhost:8600/mcp --header "Auth
 
 註冊後重啟 Claude Code,輸入 `/mcp` 看到 `rosetta` 且狀態 connected 即成功。
 
+## 日常維運
+
+| 事項 | 做法 |
+|---|---|
+| 索引更新 | `scripts\index_all.py --pull` 掛排程(每晚);AP 有 commit 就會自動增量,已最新的 AP 幾乎零成本 |
+| 對照表健康 | 排程輸出裡的 glossary lint:**DEAD 條目 = AP rename 後失效的對照,要修**;warn 多為概念性名詞可忽略 |
+| 對照表補詞 | 定期跑 `scripts\log_report.py`(需 KB_LOG_FILE):報表中「S3 空手 query」就是使用者查了但 KB 接不住的詞,挑高頻的補進 glossary |
+| 監控 | 排程打 `GET /health`;log 的 WARNING 是拒絕事件(白名單外查表/401 等),ERROR 是 DB 連線失敗 |
+| server code 更新 | 母站發佈新模板後,以新模板的 `rosetta\` 與 `scripts\` **整目錄覆蓋**本地同名目錄,然後重啟 server。`config\`(你的設定與 glossary)模板不含、不會被蓋;requirements.txt 有變時重跑 setup |
+
 ## 常見陷阱
 
 1. **MCP `-32000`**:設定寫了裸 `python` 被解析到沒裝套件的 Python。
@@ -126,8 +169,9 @@ claude mcp add --transport http rosetta http://localhost:8600/mcp --header "Auth
    會被 pip/python 以地區編碼讀的檔案(如 `requirements.txt`)只寫 ASCII,
    否則 zh-TW Windows 上 pip 直接 UnicodeDecodeError。
 3. **搬目錄會壞**:venv 綁絕對路徑,搬移後重跑 `scripts/setup.ps1`。
-4. **改了 server code** → 重啟服務(stdio 則 `/mcp` Reconnect);
-   **AP code 有 commit** → 排程自動增量,手動則跑 `scripts/index_all.py`。
+4. **server code 更新後忘記重啟**(含模板同步覆蓋):tools 行為停在舊版;
+   stdio 模式則 `/mcp` Reconnect。**AP code 有 commit** → 排程自動增量,
+   手動則跑 `scripts/index_all.py`。
 5. **路由不準** → 先改該 AP 的 `description`(太像系統代號就會不準)。
 6. **呼叫圖缺邊**:tree-sitter 抓不到 DI/反射/interface 實作的邊,
    `get_structure` 說沒 caller 不等於沒人用;影響評估用全文搜尋交叉確認。

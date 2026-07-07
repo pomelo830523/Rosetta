@@ -5,7 +5,7 @@
 #                    answer  = 可直接回答(驗證不誤觸發反問)
 #   candidates       expect=clarify 時:反問中應出現的候選詞(至少命中 2 個)
 #   must_include     expect=answer 時:回答應包含的關鍵字(任一組即可,子清單=或)
-# 判定為啟發式(eval_e2e.py),正式驗收可再人工複核。
+# 驗收方式:人工逐題實測(在 Claude 提問,核對是否先反問、候選是否命中)。
 
 - id: v1
   question: 竹科悅揚的不含車位單價是多少?

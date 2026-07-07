@@ -30,7 +30,7 @@ cd <AP repo 根>; codegraph init .                 # 每 AP 建一次圖
 | `scripts/index_all.py` | 批次索引(--pull / --rebuild / --app;掛排程) |
 | `rosetta/semantic_index.py` | 單 AP 語意索引(--app [--rebuild]) |
 | `scripts/extract_glossary.py` | 對照表骨架萃取(--app) |
-| `scripts/setup.ps1` | venv + 依賴 + .mcp.json + selftest |
+| `scripts/setup.ps1` | venv + 依賴 + .mcp.json 範本(模板無 selftest,該步自動略過) |
 | `config/glossary/` | 每 AP 一份對照表(只需中文;只存名詞對應不存公式) |
 
 ## 環境變數

@@ -35,10 +35,10 @@
 
 驗收與調校:
 - [x] eval 模糊題 5 題(eval/questions-vague.yaml;S4/S1/不誤觸發等情境)
-- [ ] 正式跑 `scripts/eval_e2e.py --set all`(清晰 10 + 模糊 5):
-      模糊題釐清率、清晰題誤觸發 ≤ 1/10;超標則調 S2 門檻(Δ、模組數)。
-      注意:請在**獨立終端機**跑(不要從 Claude Code session 內啟動——
-      同帳號併發搶額度會被 rate-limit 拖到逾時;煙霧測試已驗證管線可通)
+- [x] ~~正式跑 `scripts/eval_e2e.py --set all`~~ → **腳本已移除(2026-07-07)**:
+      rate limit 退避使單題耗時不可控(60/240/600s 皆逾時),自動化不可靠;
+      驗收改人工逐題實測(題庫保留:questions.yaml + questions-vague.yaml),
+      誤觸發超標仍照原則調 S2 門檻(Δ、模組數)。決策記錄:SPEC §6。
 
 ## Phase 10 — 維運與品質自動化 ✅(2026-07-06)
 
@@ -46,7 +46,7 @@
       besthouse 31 條 0 DEAD、1 warn 為概念性名詞 MariaDB,可接受)
 - [x] log 報表(scripts/log_report.py:用量/耗時、S1~S3、S3 補詞候選、拒絕事件)
 - [x] E2E 自動驗收腳本(scripts/eval_e2e.py:headless claude + 啟發式判分;
-      煙霧測試通過管線,完整 15 題待正式跑——見 Phase 8 驗收項)
+      煙霧測試通過管線;**2026-07-07 移除**,原因見 Phase 8 驗收項與 SPEC §6)
 - [x] HTTP GET /health(免認證監控;實測回 3 AP 索引狀態)
 - [x] read_source start_line/end_line 範圍節錄
 - [x] code_search 支援 *.html(行窗切塊)

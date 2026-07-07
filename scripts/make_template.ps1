@@ -22,7 +22,7 @@ $CoreFiles = @(
 $ScriptFiles = @("index_all.py", "extract_glossary.py", "glossary_lint.py",
                  "log_report.py", "setup.ps1")
 # 刻意排除(本站專屬):config/kb.config.yaml、config/glossary/、tests/、
-# scripts/eval_retrieval.py 與 eval_e2e.py(依賴 eval/ 題庫)、
+# scripts/eval_retrieval.py(依賴 eval/ 題庫)、
 # scripts/make_template.ps1、eval/、.venv/.semantic/.codegraph、code-kb-comparison.md
 
 New-Item -ItemType Directory -Force $OutDir | Out-Null
