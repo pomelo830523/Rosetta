@@ -190,6 +190,10 @@ flowchart LR
 | `get_app_config(key_pattern, app)` | 解析 `application*.yml`,回 key/value 與來源檔 | 敏感 key 遮罩 |
 | `query_db_config(table, limit, app, filter_column, filter_op, filter_value)` | 查 DB 設定表現值;可選「受限過濾」縮小範圍 | 白名單 + SELECT only;敏感表排除並附理由;過濾條件見下 |
 
+遮罩無繞道:`read_source` 讀 yml/yaml/properties/.env 時逐行套同一套敏感值
+遮罩(行數不變,行號引用不受影響)——否則「直接讀 yml 原文」會繞過
+`get_app_config` 的遮罩拿到 DB 密碼/API key。
+
 **受限過濾(Phase 9,已實作 2026-07-05)**——解決「表超過 MAX_ROWS=50 筆時,
 目標資料可能不在回傳範圍且無從鎖定」的問題(如 HOUSE 表成長後查特定房屋):
 

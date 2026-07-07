@@ -7,6 +7,7 @@ e5 系列模型需要 query:/passage: 前綴(官方要求),在這裡統一處理
 
 from dataclasses import dataclass
 import os
+import threading
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +19,7 @@ from kb_config import AppContext
 DEFAULT_MODEL = "intfloat/multilingual-e5-large"
 
 _model_cache: dict[str, object] = {}
+_model_lock = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -43,10 +45,13 @@ def get_model_name(app: AppContext) -> str:
 
 
 def _get_model(model_name: str):
-    if model_name not in _model_cache:
-        from fastembed import TextEmbedding  # import 放函式內:沒裝也不擋非語意功能
-        _model_cache[model_name] = TextEmbedding(model_name)
-    return _model_cache[model_name]
+    # HTTP 模式下 tools 在 worker thread 併發執行:載入加鎖,
+    # 避免兩個首次查詢同時載入大模型(記憶體高峰翻倍、重複下載)
+    with _model_lock:
+        if model_name not in _model_cache:
+            from fastembed import TextEmbedding  # import 放函式內:沒裝也不擋非語意功能
+            _model_cache[model_name] = TextEmbedding(model_name)
+        return _model_cache[model_name]
 
 
 def _apply_prefix(texts: list[str], kind: str, model_name: str) -> list[str]:

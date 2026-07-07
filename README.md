@@ -62,7 +62,8 @@ sequenceDiagram
 6. **跨 AP 探索**:`app="all"` 一次掃所有系統(每 AP 2 筆位置),
    找到歸屬後切回單一 AP 深查。
 7. **唯讀安全**:不寫檔、不執行;DB 只 SELECT 白名單表(個資表明示排除)、
-   敏感 config 值遮罩、防目錄穿越、HTTP 模式 Bearer 認證。
+   敏感 config 值遮罩(`get_app_config` 與 `read_source` 讀 yml/properties
+   皆遮罩,無繞道)、防目錄穿越、HTTP 模式 Bearer 認證。
 
 ## 接入你的 AP 要做什麼
 
@@ -81,9 +82,9 @@ sequenceDiagram
 |------|------|
 | `list_apps()` | 列出管理的 AP 與描述(Claude 路由用) |
 | `lookup_term(query, app)` | 業務用語 → IT 對照(class/method/DB 欄位/config key) |
-| `search_code(query, top_k, app, include_call_chain)` | 語意檢索原始碼,回 symbol 原文 |
+| `search_code(query, top_k, app, include_call_chain)` | 語意檢索原始碼,回 symbol 原文(top_k 上限 10) |
 | `get_structure(symbol, app)` | callers / callees / 定義位置(codegraph 圖) |
-| `read_source(relative_path, app, start_line, end_line)` | 讀檔案或行範圍節錄(限該 AP 專案根內) |
+| `read_source(relative_path, app, start_line, end_line)` | 讀檔案或行範圍節錄(限該 AP 專案根內;yml/properties 敏感值遮罩) |
 | `get_app_config(key_pattern, app)` | 查 `application*.yml`;敏感值遮罩 |
 | `query_db_config(table, limit, app, filter_column, filter_op, filter_value)` | 查 DB 設定表現值;白名單 + SELECT only;受限過濾(eq/starts_with/contains,欄位名驗證、值繫結);DB 端 10s 執行上限 |
 
@@ -95,7 +96,8 @@ sequenceDiagram
 
 ```
 rosetta/               server 核心(MCP 層與檢索引擎)
-  kb_server.py         MCP 層(7 tools、instructions、防目錄穿越、app 路由、HTTP+token)
+  kb_server.py         MCP 層(7 tools、instructions、防目錄穿越、app 路由)
+  http_transport.py    HTTP 集中部署(Bearer 認證、GET /health、uvicorn)
   kb_config.py         config/kb.config.yaml → AppContext(per-AP 路徑/DB/glossary)
   glossary.py          對照表比對/展開/boost
   semantic_search.py   語意檢索(向量內積 + 字面 boost;不掃 repo)
@@ -110,7 +112,8 @@ scripts/               維運腳本
   glossary_lint.py     對照表防腐化檢測(it_terms ↔ codegraph/config/白名單)
   log_report.py        log 彙整報表(用量/歧義訊號統計/glossary 補詞候選)
   extract_glossary.py  對照表骨架萃取(--app)
-  eval_retrieval.py    embedding 模型評測(eval/ 題庫)
+  eval_retrieval.py    embedding 模型評測(eval/ 題庫;排序與語料同 production)
+  script_args.py       scripts 共用的 --flag 參數解析
   setup.ps1            venv + 依賴 + .mcp.json 範本 + selftest
   make_template.ps1    產出通用模板(nl-query-kb-template/;code 只在這裡維護)
 tests/                 selftest.py(功能驗證)、selftest_multiapp.py(multi-AP 隔離)

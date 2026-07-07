@@ -56,6 +56,15 @@ def _extract_context_lines(lines: list[str], start_line: int) -> tuple[list[str]
     return annotations, comments
 
 
+def search_prefixes(app: AppContext) -> tuple[str, ...]:
+    """search_dirs 的 repo 相對前綴——語意索引(與 eval 語料)的收錄範圍。
+
+    codegraph 掃整個 repo;語意索引只收 search_dirs 內的 symbol,避免跨界污染。
+    """
+    return tuple(
+        d.relative_to(app.repo_root).as_posix() + "/" for d in app.search_dirs)
+
+
 def glossary_injection(app: AppContext) -> dict[str, str]:
     """{normalized_it_segment: 業務詞文字}。symbol 名相符時把業務用語注入其 NL 訊號。"""
     injection: dict[str, str] = {}
@@ -123,11 +132,14 @@ def build(app: AppContext, rebuild: bool = False) -> str:
         return (f"[{app.name}] 找不到 {app.codegraph_db},無法建語意索引"
                 "(先在該 repo 跑 codegraph 建圖)。")
 
+    prefixes = search_prefixes(app)
+    if not prefixes:
+        # startswith(()) 恆為 False,不擋下來會默默建出 0 symbol 的索引
+        return (f"[{app.name}] kb.config.yaml 未設定 search_dirs,"
+                "語意索引沒有收錄範圍,略過(請補 search_dirs 後重跑)。")
+
     paths = index_paths(app)
     model_name = get_model_name(app)
-    # codegraph 掃整個 repo;語意索引只收 search_dirs 內的 symbol,避免跨界污染
-    prefixes = tuple(
-        d.relative_to(app.repo_root).as_posix() + "/" for d in app.search_dirs)
     file_hashes = {p: h for p, h in graph_db.file_hashes(app).items()
                    if p.startswith(prefixes)}
     glossary_sha = _glossary_hash(app)

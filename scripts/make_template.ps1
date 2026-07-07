@@ -14,13 +14,14 @@ if ($OutDir -eq "") {
 
 # server 核心(通用,直接複製到模板的 rosetta/)
 $CoreFiles = @(
-    "kb_server.py", "kb_config.py", "kb_log.py", "code_search.py", "glossary.py",
+    "kb_server.py", "http_transport.py", "kb_config.py", "kb_log.py",
+    "code_search.py", "glossary.py",
     "app_config.py", "db_config.py", "graph_db.py",
     "semantic_common.py", "semantic_search.py", "semantic_index.py"
 )
 # 維運腳本(複製到模板的 scripts/)
 $ScriptFiles = @("index_all.py", "extract_glossary.py", "glossary_lint.py",
-                 "log_report.py", "setup.ps1")
+                 "log_report.py", "script_args.py", "setup.ps1")
 # 刻意排除(本站專屬):config/kb.config.yaml、config/glossary/、tests/、
 # scripts/eval_retrieval.py(依賴 eval/ 題庫)、
 # scripts/make_template.ps1、eval/、.venv/.semantic/.codegraph、code-kb-comparison.md

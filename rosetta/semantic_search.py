@@ -100,6 +100,24 @@ def literal_boost(name_lower: str, typed_words: set[str], extra_terms: set[str])
     return min(_TYPED_WORD_BOOST * typed_hits, 0.24) + min(_GLOSSARY_WORD_BOOST * gloss_hits, 0.20)
 
 
+def hybrid_rank(scores: np.ndarray, name_of, top_k: int,
+                typed_words: set[str], extra_terms: set[str]) -> list[tuple[float, int]]:
+    """混合排序(語意分數 + 字面 boost):回傳 [(final_score, index)] 前 top_k。
+
+    只對語意分數前段的候選做字面 boost(避免全表字面比對);name_of(i) 回傳
+    第 i 筆的 symbol 名。production 檢索與 eval_retrieval 共用本函式,
+    評測排序不會與線上漂移。
+    """
+    candidate_idx = np.argsort(scores)[::-1][: max(top_k * 10, 50)]
+    rescored = [
+        (float(scores[i]) + literal_boost(name_of(int(i)).lower(), typed_words, extra_terms),
+         int(i))
+        for i in candidate_idx
+    ]
+    rescored.sort(key=lambda x: x[0], reverse=True)
+    return rescored[:top_k]
+
+
 def search(query: str, top_k: int, extra_terms: set[str], app: AppContext,
            query_vec: np.ndarray | None = None) -> list[SemanticHit]:
     """query_vec 可由呼叫端預先算好傳入(app="all" 跨 AP 查詢時,
@@ -115,16 +133,8 @@ def search(query: str, top_k: int, extra_terms: set[str], app: AppContext,
 
     typed_words = query_words(query)
     hits: list[SemanticHit] = []
-    # 先取語意分數前段的候選再做字面 boost(避免全表字面比對)
-    candidate_idx = np.argsort(scores)[::-1][: max(top_k * 10, 50)]
-    rescored: list[tuple[float, int]] = []
-    for i in candidate_idx:
-        m = meta[i]
-        score = float(scores[i]) + literal_boost(m["name"].lower(), typed_words, extra_terms)
-        rescored.append((score, i))
-    rescored.sort(key=lambda x: x[0], reverse=True)
-
-    for score, i in rescored[:top_k]:
+    ranked = hybrid_rank(scores, lambda i: meta[i]["name"], top_k, typed_words, extra_terms)
+    for score, i in ranked:
         if score < _MIN_SCORE:
             continue
         m = meta[i]

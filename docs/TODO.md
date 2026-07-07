@@ -78,6 +78,28 @@
 - [x] graph_db sqlite 連線 contextlib.closing(with 只管 transaction 不管 close)
 - [x] selftest 新增 5 項 → 57/57;multi-AP 15/15 無回歸
 
+## Phase 13 — 全專案 review 修正第二輪 ✅(2026-07-08)
+
+- [x] **read_source 遮罩繞道封堵**:讀 yml/yaml/properties/.env 時逐行套
+      get_app_config 同款敏感值遮罩(app_config.mask_text;行數不變,
+      行號引用不受影響)——原本直接讀 application*.yml 可拿到未遮罩密碼
+- [x] search_code top_k 加上限 10(原無上限,top_k=999 會灌爆對話 context)
+- [x] embedding model 載入加 threading.Lock(HTTP 併發首查會重複載入大模型)
+- [x] glossary YAML 解析失敗改記 WARNING(原靜默回空表,boost/注入默默失效)
+- [x] scripts 共用 --flag 參數解析(scripts/script_args.py;原四支腳本
+      「--app 在結尾」會 IndexError traceback;log_report 順帶修掉
+      --since 值被誤當 log 檔路徑的問題)
+- [x] eval_retrieval 與 production 對齊:語料套 search_dirs 過濾
+      (semantic_index.search_prefixes)、排序直接呼叫
+      semantic_search.hybrid_rank(原是複製品,會漂移)
+- [x] read_source end_line < start_line 回明確錯誤(原回空節錄)
+- [x] semantic_index:search_dirs 未設定時明確略過(原默默建 0 symbol 索引)
+- [x] KB_ENGINE 無效值啟動時警告,且不再覆蓋設定檔 engine(原靜默當 auto)
+- [x] HTTP 層拆出 rosetta/http_transport.py(Bearer/health/uvicorn;
+      kb_server 回到 MCP 層本體);list_apps 加註語意索引未建狀態
+- [x] 刪除 code-kb-comparison.md(過時,模板本就排除)
+- [x] selftest 新增 4 項 → 61/61;multi-AP 15/15 無回歸;模板重產
+
 ## 決定不做(記錄於 SPEC §6 非目標)
 - 變更歷史查詢(get_change_history):git 歷史量體風險 > 價值,2026-07-06 定案不做
 

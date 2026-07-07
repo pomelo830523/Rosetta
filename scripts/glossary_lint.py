@@ -22,6 +22,7 @@ import app_config
 import glossary
 import graph_db
 import kb_config
+import script_args
 
 
 def _normalize(text: str) -> str:
@@ -82,7 +83,7 @@ def lint_app(app: kb_config.AppContext) -> tuple[int, list[str]]:
 
 
 def main() -> int:
-    only = sys.argv[sys.argv.index("--app") + 1] if "--app" in sys.argv else ""
+    only = script_args.flag_value("--app")
     config = kb_config.load_config()
     apps = [a for a in config.apps if not only or a.name.lower() == only.lower()]
     if not apps:

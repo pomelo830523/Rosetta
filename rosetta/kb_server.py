@@ -70,6 +70,12 @@ _resolve = kb_config.resolve_app
 
 ALL_APPS = "all"  # app 參數保留字:跨 AP 聯合查詢(SPEC §4.9,kb_config 禁用同名 app)
 
+# KB_ENGINE 打錯字(如 sematic)會被靜默當 auto,啟動時警告一次
+_env_engine = os.environ.get("KB_ENGINE", "")
+if _env_engine and _env_engine not in kb_config.VALID_ENGINES:
+    log.warning("KB_ENGINE=「%s」無效(%s),忽略,依 kb.config.yaml 的 engine。",
+                _env_engine, " | ".join(kb_config.VALID_ENGINES))
+
 
 def _is_all(app: str) -> bool:
     return (app or "").strip().lower() == ALL_APPS
@@ -131,6 +137,13 @@ def list_apps() -> str:
             status.append("repo 路徑不存在,請通知管理員")
         if not glossary.load_glossary(app.glossary_path):
             status.append("尚無對照表")
+        if app.engine != "grep":
+            try:
+                from semantic_common import index_paths
+                if not index_paths(app).all_exist():
+                    status.append("語意索引未建,暫以 grep 墊檔")
+            except ImportError:
+                pass
         suffix = f"({'; '.join(status)})" if status else ""
         lines.append(f"- {app.name}:{app.description}{suffix}")
     return f"共 {len(config.apps)} 個 AP:\n" + "\n".join(lines)
@@ -209,7 +222,9 @@ def lookup_term(query: str, app: str = "") -> str:
 
 
 def _engine(ctx: kb_config.AppContext) -> str:
-    forced = os.environ.get("KB_ENGINE", "") or ctx.engine
+    env = os.environ.get("KB_ENGINE", "")
+    # 無效的 env 值不覆蓋設定檔(啟動時已警告),維持 ctx.engine 的行為
+    forced = env if env in kb_config.VALID_ENGINES else ctx.engine
     if forced in ("semantic", "grep"):
         return forced
     try:
@@ -252,6 +267,7 @@ def _read_body(file_path: str, start_line: int, end_line: int,
 
 _SCATTER_DELTA = 0.03      # S2:top1 − top3 分數差小於此值視為「沒有明確贏家」
 _SCATTER_MIN_CLASSES = 3   # S2:命中散在 ≥ 此數量的 class 才視為分散
+_MAX_TOP_K = 10            # search_code 單次回傳 symbol 數上限(防灌爆對話 context)
 
 
 def _scatter_note(hits) -> str:
@@ -385,8 +401,9 @@ def search_code(query: str, top_k: int = 3, app: str = "",
     原文,含檔名與行號。建議查詢詞同時含中文業務詞與英文 IT 詞。
 
     語意引擎:embedding 檢索,口語提問可命中英文 identifier 與中文註解;
-    會先用該 AP 的 glossary 把業務用語展開成 IT 詞加權。
-    include_call_chain=True 時每個命中另附一層呼叫鏈摘要(不需要可關,省輸出)。
+    會先用該 AP 的 glossary 把業務用語展開成 IT 詞加權。top_k 上限 10。
+    include_call_chain=True 時每個命中另附一層呼叫鏈摘要(不需要可關,省輸出;
+    僅 semantic 引擎提供,grep 墊檔時無呼叫鏈)。
     適合問「某公式怎麼算」「某規則的實作在哪」。
     app="all" = 跨 AP 探索(不確定問題屬於哪個系統時;每 AP 只回 2 筆位置,
     確認歸屬後切回單一 app 深查)。
@@ -396,6 +413,7 @@ def search_code(query: str, top_k: int = 3, app: str = "",
     ctx, error = _resolve(app)
     if ctx is None:
         return error
+    top_k = max(1, min(int(top_k), _MAX_TOP_K))
     extra_terms, matched_entries = glossary.expand_query(query, ctx.glossary_path)
     if _engine(ctx) == "semantic":
         return _search_semantic(query, top_k, extra_terms, matched_entries,
@@ -461,6 +479,9 @@ def get_structure(symbol: str, app: str = "") -> str:
 
 
 _MAX_SOURCE_CHARS = 100_000  # read_source 單次回傳上限,防超大檔灌爆對話 context
+# 這些設定檔可能含密碼/API key:read_source 回傳前逐行遮罩敏感值,
+# 否則 get_app_config 的遮罩會被「直接讀 yml 原文」繞過
+_MASKED_SUFFIXES = (".yml", ".yaml", ".properties")
 
 
 def _cap_source(text: str, relative_path: str, ctx) -> str:
@@ -483,10 +504,13 @@ def read_source(relative_path: str, app: str = "",
 
     start_line / end_line(1-based,皆含)可只讀片段——search_code / get_structure
     已給行號時建議帶上,省對話額度;預設 0 = 整檔(過大會截斷)。
+    yml/properties 等設定檔內的敏感值(password/api-key)自動遮罩。
     """
     ctx, error = _resolve(app)
     if ctx is None:
         return error
+    if 0 < end_line < start_line:
+        return f"end_line({end_line})不可小於 start_line({start_line}),請檢查行號範圍。"
     root = ctx.repo_root.resolve()
     target = (root / relative_path).resolve()
     # 防目錄穿越:限制在該 AP 的專案根內
@@ -496,6 +520,9 @@ def read_source(relative_path: str, app: str = "",
     if not target.is_file():
         return f"找不到檔案:{relative_path}(app={ctx.name})"
     text = target.read_text(encoding="utf-8", errors="replace")
+    if (target.suffix.lower() in _MASKED_SUFFIXES
+            or target.name.lower().startswith(".env")):
+        text = app_config.mask_text(text)  # 逐行遮罩,行數不變
     if start_line > 0:
         lines = text.splitlines()
         if start_line > len(lines):
@@ -545,103 +572,10 @@ def query_db_config(table: str, limit: int = 50, app: str = "",
                                  filter_op=filter_op, filter_value=filter_value)
 
 
-class _BearerTokenGuard:
-    """極簡 ASGI middleware:KB_AUTH_TOKEN 設定時強制 Bearer token。
-
-    比對用 hmac.compare_digest(常數時間),失敗回 401;不做使用者/權限概念
-    ——本 server 全域唯讀,token 只擋「不是團隊的人」。
-    """
-
-    def __init__(self, app, token: str):
-        self._app = app
-        self._token = token
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http":
-            await self._app(scope, receive, send)
-            return
-        import hmac
-        # 全程 bytes 比對:str 版 compare_digest 遇非 ASCII 會 raise,
-        # decode 遇非 UTF-8 也會 raise——惡意 header 應得到 401 而非 500
-        header = dict(scope.get("headers") or []).get(b"authorization", b"")
-        expected = f"Bearer {self._token}".encode()
-        if not hmac.compare_digest(header, expected):
-            client = (scope.get("client") or ("?", 0))[0]
-            log.warning("HTTP 401 Bearer 驗證失敗 client=%s path=%s",
-                        client, scope.get("path", ""))
-            await send({"type": "http.response.start", "status": 401,
-                        "headers": [(b"content-type", b"text/plain; charset=utf-8"),
-                                    (b"www-authenticate", b"Bearer")]})
-            await send({"type": "http.response.body",
-                        "body": "缺少或錯誤的 Authorization Bearer token。".encode()})
-            return
-        await self._app(scope, receive, send)
-
-
-def _health_payload() -> dict:
-    """GET /health 的內容:server 存活 + 各 AP 索引狀態(監控/排程檢查用)。"""
-    import json as json_mod
-    try:
-        config = kb_config.load_config()
-    except ValueError as exc:
-        return {"status": "config-error", "detail": str(exc)}
-    from semantic_common import index_paths
-    apps = []
-    for app in config.apps:
-        paths = index_paths(app)
-        entry = {
-            "name": app.name,
-            "repo": app.repo_root.is_dir(),
-            "codegraph": graph_db.available(app),
-            "semantic": paths.all_exist(),
-            "built_at": None,
-        }
-        if entry["semantic"]:
-            try:
-                entry["built_at"] = json_mod.loads(
-                    paths.state.read_text(encoding="utf-8")).get("built_at")
-            except (OSError, ValueError):
-                pass
-        apps.append(entry)
-    return {"status": "ok", "apps": apps}
-
-
-class _HealthEndpoint:
-    """GET /health:免認證(刻意,監控用;僅索引狀態,無敏感資料),其餘透傳。"""
-
-    def __init__(self, app):
-        self._app = app
-
-    async def __call__(self, scope, receive, send):
-        if (scope["type"] == "http" and scope.get("path") == "/health"
-                and scope.get("method") == "GET"):
-            import json as json_mod
-            body = json_mod.dumps(_health_payload(), ensure_ascii=False).encode()
-            await send({"type": "http.response.start", "status": 200,
-                        "headers": [(b"content-type", b"application/json; charset=utf-8")]})
-            await send({"type": "http.response.body", "body": body})
-            return
-        await self._app(scope, receive, send)
-
-
-def _run_http() -> None:
-    """集中部署:streamable HTTP(使用者端的 Connector URL 指到 /mcp)。"""
-    import uvicorn
-    app = mcp.streamable_http_app()
-    token = os.environ.get("KB_AUTH_TOKEN", "")
-    if token:
-        app = _BearerTokenGuard(app, token)
-    else:
-        log.warning("KB_AUTH_TOKEN 未設定,HTTP 模式無認證——僅限信任內網使用。")
-    app = _HealthEndpoint(app)  # health 在 token guard 外層,監控不需帶 token
-    log.info("啟動 transport=http %s:%d auth=%s",
-             mcp.settings.host, mcp.settings.port, "bearer" if token else "無")
-    uvicorn.run(app, host=mcp.settings.host, port=mcp.settings.port)
-
-
 if __name__ == "__main__":
     if os.environ.get("KB_TRANSPORT", "stdio").lower() == "http":
-        _run_http()
+        import http_transport
+        http_transport.run(mcp)
     else:
         log.info("啟動 transport=stdio")
         mcp.run()  # stdio:開發者本機模式

@@ -133,6 +133,16 @@ def main() -> None:
     check("datasource password 已遮罩", "besthouse123" not in out)
     check("覆蓋來源檔有標註", "application.yml" in out)
 
+    # 5b. read_source 讀 yml 不可繞過遮罩(遮罩逐行、行數不變)
+    import kb_server
+    out = kb_server.read_source(
+        "besthouse-backend/src/main/resources/application.yml", app="besthouse")
+    check("read_source 讀 yml:password 已遮罩",
+          "besthouse123" not in out and "遮罩" in out)
+    out = kb_server.read_source(
+        "besthouse-backend/src/main/resources/application-local.yml", app="besthouse")
+    check("read_source 讀 local yml:api-key 已遮罩", "AIza" not in out)
+
     # 6. DB 白名單(白名單與敏感表現在來自 kb.config.yaml)
     out = db_config.query_table("MEMBER", 50, app)
     check("MEMBER(敏感表)被拒且給理由", "不可查詢" in out and "個資" in out)
@@ -245,8 +255,19 @@ def main() -> None:
     check("read_source 範圍節錄:含節錄標頭與目標公式",
           out.startswith("(節錄") and "calculatePricePerPingWithoutParking" in out)
     check("read_source 範圍節錄:未回傳整檔", len(out) < 3000, f"{len(out)} 字元")
+    out = kb_server.read_source(
+        "besthouse-backend/src/main/java/com/besthouse/service/HouseService.java",
+        app="besthouse", start_line=10, end_line=5)
+    check("read_source end_line < start_line 回明確錯誤",
+          "end_line" in out and "start_line" in out)
 
-    payload = kb_server._health_payload()
+    if semantic_ready:
+        out = kb_server.search_code("單價", top_k=999, app="besthouse")
+        check("search_code top_k 超限被 clamp(≤10 筆)", 0 < out.count("### ") <= 10,
+              f"{out.count('### ')} 筆")
+
+    import http_transport
+    payload = http_transport.health_payload()
     check("health payload:status ok 且列出全部 AP",
           payload["status"] == "ok" and len(payload["apps"]) == len(config.apps))
 

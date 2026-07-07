@@ -15,6 +15,8 @@ from pathlib import Path
 import re
 import sys
 
+import script_args
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LOG = ROOT / "rosetta-kb.log"
 
@@ -101,8 +103,8 @@ def report(stats: dict) -> str:
 
 
 def main() -> int:
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    since = sys.argv[sys.argv.index("--since") + 1] if "--since" in sys.argv else ""
+    since = script_args.flag_value("--since")
+    args = [a for a in sys.argv[1:] if not a.startswith("--") and a != since]
     path = Path(args[0]) if args else DEFAULT_LOG
     if not path.is_file():
         print(f"找不到 log 檔:{path}(先以 KB_LOG_FILE 啟動 server 產生)")

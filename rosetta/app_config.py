@@ -67,6 +67,27 @@ def mask_value(key: str, value: str) -> str:
     return re.sub(r"(password=)[^&;\s]+", r"\1****", value, flags=re.IGNORECASE)
 
 
+# yml「key: value」行(key 可含 . - [] 引號);properties 的 key=value 由
+# mask_value 的 password= 規則涵蓋
+_YML_KV_RE = re.compile(r"""^(\s*["']?[\w.\-\[\]]+["']?\s*:\s+)(\S.*)$""")
+
+
+def mask_text(text: str) -> str:
+    """逐行遮罩 yml/properties 純文字中的敏感值(read_source 用)。
+
+    行數不變,行號引用不受影響;非敏感行原樣保留。
+    """
+    masked_lines = []
+    for line in text.splitlines():
+        kv = _YML_KV_RE.match(line)
+        if kv and _SENSITIVE_KEY_RE.search(kv.group(1)):
+            masked_lines.append(kv.group(1) + _MASK)
+        else:
+            masked_lines.append(
+                re.sub(r"(password=)[^&;\s]+", r"\1****", line, flags=re.IGNORECASE))
+    return "\n".join(masked_lines)
+
+
 def load_effective_config(app: AppContext) -> dict[str, tuple[str, str]]:
     """回傳 {dot_key: (value, source_file)};後載入的 profile 檔覆蓋基底。
 

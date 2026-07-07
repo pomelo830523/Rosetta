@@ -45,12 +45,19 @@ def _parse_aliases(raw) -> tuple[tuple[str, str], ...]:
 
 
 def load_glossary(path: Path) -> list[GlossaryEntry]:
-    """讀取指定的 glossary yaml(per-app);檔案不存在或格式錯誤時回空表(不讓搜尋整個失效)。"""
+    """讀取指定的 glossary yaml(per-app);檔案不存在或格式錯誤時回空表(不讓搜尋整個失效)。
+
+    格式錯誤會記 WARNING——編壞對照表時 boost/語意注入會默默失效,不能無聲。
+    """
     if not path.is_file():
         return []
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or []
-    except yaml.YAMLError:
+    except yaml.YAMLError as exc:
+        import kb_log
+        kb_log.setup().warning(
+            "glossary 解析失敗,視為空表(檢索 boost 與語意注入將失效)%s:%s",
+            path.name, exc)
         return []
     entries: list[GlossaryEntry] = []
     for item in data:

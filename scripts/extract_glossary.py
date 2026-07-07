@@ -15,6 +15,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "rosetta"))
 
 import kb_config
+import script_args
 
 _TABLE_RE = re.compile(r'@Table\(name\s*=\s*"([A-Z_]+)"\)')
 _COLUMN_RE = re.compile(
@@ -80,13 +81,7 @@ def to_yaml(items: list[dict]) -> str:
 
 
 def main() -> None:
-    name = ""
-    if "--app" in sys.argv:
-        idx = sys.argv.index("--app")
-        if idx + 1 >= len(sys.argv):
-            raise SystemExit("--app 後面要接 app 名稱。")
-        name = sys.argv[idx + 1]
-    app, error = kb_config.resolve_app(name)
+    app, error = kb_config.resolve_app(script_args.flag_value("--app"))
     if app is None:
         raise SystemExit(error)
     if app.entity_dir is None or not app.entity_dir.exists():
