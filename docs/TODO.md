@@ -63,6 +63,21 @@
       multi-AP:無索引 AP 略過、glossary 分組隔離 → 15/15
 - [x] 實測跨 AP 路由:「產生條碼」→ zplviewer detectBarcodes(0.92~0.94)
 
+## Phase 12 — 全專案 review 修正 ✅(2026-07-07)
+
+- [x] HTTP 模式 tool 改 async offload(anyio.to_thread;同步 tool 會卡整個
+      event loop,慢查詢期間所有使用者與 /health 全停;模組層維持同步供 tests)
+- [x] get_app_config 動態掃 application*.yml/.yaml(原寫死兩檔名,
+      application-prod.yml 等 profile 檔會靜默漏值;基底先、local 最後)
+- [x] datasource URL port 改 optional(jdbc:mariadb://host/db 合法;預設 3306/1521)
+- [x] Bearer 認證改全程 bytes 比對(非 ASCII header 原會 500 而非 401)
+- [x] engine 鎖定 semantic 且索引未建時回可讀訊息(原丟 FileNotFoundError)
+- [x] 語意索引 state 記 fastembed 版本(升版改 pooling 會讓檢索靜默劣化,
+      版本變更視同 model 變更觸發全量重建)
+- [x] 索引檔原子寫入(tmp + os.replace)+ 載入時驗證 meta/vectors 長度一致
+- [x] graph_db sqlite 連線 contextlib.closing(with 只管 transaction 不管 close)
+- [x] selftest 新增 5 項 → 57/57;multi-AP 15/15 無回歸
+
 ## 決定不做(記錄於 SPEC §6 非目標)
 - 變更歷史查詢(get_change_history):git 歷史量體風險 > 價值,2026-07-06 定案不做
 

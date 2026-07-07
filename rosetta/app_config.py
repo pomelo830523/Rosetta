@@ -7,10 +7,36 @@ import re
 
 import yaml
 
+from pathlib import Path
+
 from kb_config import AppContext
 
-# application.yml 為基底,application-local.yml 等 profile 檔在後、覆蓋前者
-CONFIG_FILES = ("application.yml", "application-local.yml")
+# 載入順序(後者覆蓋前者):application.yml/.yaml 基底 → 其他 profile 檔
+# (字母序)→ application-local 最後(維持「local 覆蓋一切」的既有語意)。
+# 實際生效取決於 Spring active profile,來源檔標註讓模型能說明覆蓋關係。
+_BASE_STEMS = ("application",)
+_LAST_STEMS = ("application-local",)
+
+
+def config_files(app: AppContext) -> list[Path]:
+    """該 AP 的 application*.yml / *.yaml 清單,依覆蓋順序排序。"""
+    if not app.resources_dir.is_dir():
+        return []
+    found = sorted(
+        set(app.resources_dir.glob("application*.yml"))
+        | set(app.resources_dir.glob("application*.yaml")),
+        key=lambda p: p.name.lower(),
+    )
+
+    def order(path: Path) -> tuple[int, str]:
+        stem = path.stem.lower()
+        if stem in _BASE_STEMS:
+            return (0, stem)
+        if stem in _LAST_STEMS:
+            return (2, stem)
+        return (1, stem)
+
+    return sorted(found, key=order)
 
 _SENSITIVE_KEY_RE = re.compile(
     r"password|passwd|secret|token|api[-_]?key|credential|private[-_]?key", re.IGNORECASE
@@ -48,17 +74,14 @@ def load_effective_config(app: AppContext) -> dict[str, tuple[str, str]]:
     並在來源檔標註讓模型能說明覆蓋關係。
     """
     effective: dict[str, tuple[str, str]] = {}
-    for filename in CONFIG_FILES:
-        path = app.resources_dir / filename
-        if not path.is_file():
-            continue
+    for path in config_files(app):
         try:
             data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError as exc:
-            effective[f"(parse-error:{filename})"] = (str(exc), filename)
+            effective[f"(parse-error:{path.name})"] = (str(exc), path.name)
             continue
         for key, value in _flatten(data).items():
-            effective[key] = (value, filename)
+            effective[key] = (value, path.name)
     return effective
 
 
@@ -66,7 +89,8 @@ def search_config(key_pattern: str, app: AppContext) -> str:
     """依 key 子字串(不分大小寫)過濾 config;空字串回傳全部。"""
     config = load_effective_config(app)
     if not config:
-        return f"讀不到任何 config 檔(找過:{', '.join(CONFIG_FILES)},目錄:{app.resources_dir})"
+        return (f"讀不到任何 config 檔(找過 application*.yml / *.yaml,"
+                f"目錄:{app.resources_dir})")
 
     needle = key_pattern.strip().lower()
     rows = [
@@ -79,7 +103,7 @@ def search_config(key_pattern: str, app: AppContext) -> str:
 
     lines = [f"{key} = {value}    ← {source}" for key, value, source in rows]
     header = (
-        f"共 {len(rows)} 筆(application-local.yml 覆蓋 application.yml;"
+        f"共 {len(rows)} 筆(profile 檔覆蓋 application.yml 基底、local 最優先;"
         "敏感值已遮罩,遮罩不影響 key 本身的可見性):"
     )
     return header + "\n" + "\n".join(lines)

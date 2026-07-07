@@ -8,6 +8,7 @@
 本模組只提供 symbol 名稱、位置與呼叫關係。
 """
 
+import contextlib
 from dataclasses import dataclass
 import sqlite3
 
@@ -39,13 +40,15 @@ def available(app: AppContext) -> bool:
 
 
 def _connect(app: AppContext) -> sqlite3.Connection:
-    # URI mode=ro:確保唯讀,絕不寫入 codegraph 的索引
+    # URI mode=ro:確保唯讀,絕不寫入 codegraph 的索引。
+    # 注意:sqlite3 連線的 with 只管 transaction 不管 close,
+    # 呼叫端一律用 contextlib.closing 包住。
     return sqlite3.connect(f"file:{app.codegraph_db.as_posix()}?mode=ro", uri=True)
 
 
 def schema_warning(app: AppContext) -> str:
     """schema 版本不在測試範圍時回傳警告字串;正常時回空字串。"""
-    with _connect(app) as con:
+    with contextlib.closing(_connect(app)) as con:
         version = con.execute("SELECT MAX(version) FROM schema_versions").fetchone()[0]
     if version != TESTED_SCHEMA_VERSION:
         return (
@@ -69,7 +72,7 @@ _SYMBOL_COLS = "id, kind, name, qualified_name, file_path, start_line, end_line,
 def iter_symbols(app: AppContext) -> list[Symbol]:
     """回傳所有可索引 symbol(語意索引的母體)。"""
     placeholders = ",".join("?" for _ in INDEXABLE_KINDS)
-    with _connect(app) as con:
+    with contextlib.closing(_connect(app)) as con:
         rows = con.execute(
             f"SELECT {_SYMBOL_COLS} FROM nodes WHERE kind IN ({placeholders})",
             INDEXABLE_KINDS,
@@ -80,7 +83,7 @@ def iter_symbols(app: AppContext) -> list[Symbol]:
 def find_nodes(name: str, app: AppContext, limit: int = 10) -> list[Symbol]:
     """依 name 或 qualified_name(子字串、不分大小寫)找 symbol。"""
     needle = f"%{name.strip()}%"
-    with _connect(app) as con:
+    with contextlib.closing(_connect(app)) as con:
         rows = con.execute(
             f"SELECT {_SYMBOL_COLS} FROM nodes "
             "WHERE (name LIKE ? OR qualified_name LIKE ?) "
@@ -97,7 +100,7 @@ def _related(node_id: str, app: AppContext, direction: str) -> list[tuple[str, S
         join_on, where_on = "e.source = n.id", "e.target = ?"
     else:
         join_on, where_on = "e.target = n.id", "e.source = ?"
-    with _connect(app) as con:
+    with contextlib.closing(_connect(app)) as con:
         rows = con.execute(
             f"SELECT e.kind, {', '.join('n.' + c.strip() for c in _SYMBOL_COLS.split(','))} "
             f"FROM edges e JOIN nodes n ON {join_on} "
@@ -117,6 +120,6 @@ def callees(node_id: str, app: AppContext) -> list[tuple[str, Symbol]]:
 
 def file_hashes(app: AppContext) -> dict[str, str]:
     """{repo 相對路徑: content_hash} —— 語意索引增量更新的依據。"""
-    with _connect(app) as con:
+    with contextlib.closing(_connect(app)) as con:
         rows = con.execute("SELECT path, content_hash FROM files").fetchall()
     return {path: h for path, h in rows}

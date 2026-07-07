@@ -14,6 +14,7 @@ import functools
 import os
 import time
 
+import anyio.to_thread
 from mcp.server.fastmcp import FastMCP
 
 import app_config
@@ -96,8 +97,27 @@ def _logged(fn):
     return wrapper
 
 
-@mcp.tool()
-@_logged
+def _tool(fn):
+    """註冊 MCP tool:同步實作丟 worker thread 執行。
+
+    FastMCP 對同步 tool 是在 event loop 內直接呼叫的(mcp SDK
+    func_metadata.call_fn_with_arg_validation),HTTP 模式下一個慢查詢
+    (DB 最長 10s、首次 model 載入)會卡住所有使用者與 /health。
+    這裡註冊的是 async shim(anyio.to_thread 轉發);模組層名字維持
+    同步版,tests 與內部呼叫不受影響。
+    """
+    logged = _logged(fn)
+
+    @functools.wraps(fn)
+    async def shim(*args, **kwargs):
+        return await anyio.to_thread.run_sync(
+            functools.partial(logged, *args, **kwargs))
+
+    mcp.tool()(shim)
+    return logged
+
+
+@_tool
 def list_apps() -> str:
     """列出本 server 管理的所有 AP(系統)與描述。
 
@@ -156,8 +176,7 @@ def _lookup_term_all(query: str) -> str:
             + "\n\n".join(parts))
 
 
-@mcp.tool()
-@_logged
+@_tool
 def lookup_term(query: str, app: str = "") -> str:
     """查指定 AP 的「業務用語 ↔ IT 用語」對照表。輸入使用者口語(如「權重」「被刷掉」),
     回傳對應的 class/method/DB 欄位/config key 與說明,作為後續搜尋的錨點。
@@ -267,7 +286,16 @@ def _glossary_domain_hint(ctx: kb_config.AppContext) -> str:
 def _search_semantic(query: str, top_k: int, extra_terms, matched_entries,
                      ctx: kb_config.AppContext, include_call_chain: bool) -> str:
     import semantic_search
-    hits = semantic_search.search(query, top_k, extra_terms, ctx)
+    # engine 鎖定 semantic(env/config)時可能沒建索引;auto 模式不會走到這裡
+    if not semantic_search.available(ctx):
+        log.warning("engine=semantic 但語意索引未就緒 app=%s", ctx.name)
+        return (f"app「{ctx.name}」的引擎鎖定為 semantic,但語意索引未就緒。"
+                "請管理員跑 scripts/index_all.py 建索引,或把 engine 改回 auto(自動墊檔 grep)。")
+    try:
+        hits = semantic_search.search(query, top_k, extra_terms, ctx)
+    except ValueError as exc:  # 索引檔不一致(可能重建中),見 semantic_search._load
+        log.warning("語意索引載入失敗 app=%s:%s", ctx.name, exc)
+        return str(exc)
     if not hits:
         log.info("S3 檢索空手 app=%s engine=semantic query=%s",
                  ctx.name, kb_log.brief(query))
@@ -329,11 +357,15 @@ def _search_all_apps(query: str) -> str:
             parts.append(f"## {ctx.name}:略過(語意索引未就緒,無法參與跨 AP 探索)")
             continue
         extra_terms, _ = glossary.expand_query(query, ctx.glossary_path)
-        model = semantic_search.index_model(ctx)
-        if model not in vec_cache:
-            vec_cache[model] = embed_texts([query], kind="query", model_name=model)[0]
-        hits = semantic_search.search(query, 2, extra_terms, ctx,
-                                      query_vec=vec_cache[model])
+        try:
+            model = semantic_search.index_model(ctx)
+            if model not in vec_cache:
+                vec_cache[model] = embed_texts([query], kind="query", model_name=model)[0]
+            hits = semantic_search.search(query, 2, extra_terms, ctx,
+                                          query_vec=vec_cache[model])
+        except ValueError as exc:  # 索引檔不一致(可能重建中)
+            parts.append(f"## {ctx.name}:略過({exc})")
+            continue
         if not hits:
             parts.append(f"## {ctx.name}:無足夠相關的結果")
             continue
@@ -346,8 +378,7 @@ def _search_all_apps(query: str) -> str:
     return "\n\n".join(parts)
 
 
-@mcp.tool()
-@_logged
+@_tool
 def search_code(query: str, top_k: int = 3, app: str = "",
                 include_call_chain: bool = True) -> str:
     """用自然語言搜尋指定 AP 的原始碼,回傳最相關的 symbol(method/class/欄位)
@@ -372,8 +403,7 @@ def search_code(query: str, top_k: int = 3, app: str = "",
     return _search_grep(query, top_k, extra_terms, matched_entries, ctx)
 
 
-@mcp.tool()
-@_logged
+@_tool
 def get_structure(symbol: str, app: str = "") -> str:
     """查指定 AP 中 symbol 的結構關係:誰呼叫它(callers)、它呼叫誰(callees)、
     定義位置。輸入 method/class/欄位名稱(可含 class 前綴,如 HouseService.toDto)。
@@ -445,8 +475,7 @@ def _cap_source(text: str, relative_path: str, ctx) -> str:
             "指定範圍,或以 search_code / get_structure 鎖定目標 symbol。)")
 
 
-@mcp.tool()
-@_logged
+@_tool
 def read_source(relative_path: str, app: str = "",
                 start_line: int = 0, end_line: int = 0) -> str:
     """讀取指定 AP 原始碼檔案內容。relative_path 以該 AP 的專案根為基準,
@@ -478,8 +507,7 @@ def read_source(relative_path: str, app: str = "",
     return _cap_source(text, relative_path, ctx)
 
 
-@mcp.tool()
-@_logged
+@_tool
 def get_app_config(key_pattern: str = "", app: str = "") -> str:
     """查詢指定 AP 的 config(application.yml / application-local.yml)設定值。
 
@@ -493,8 +521,7 @@ def get_app_config(key_pattern: str = "", app: str = "") -> str:
     return app_config.search_config(key_pattern, ctx)
 
 
-@mcp.tool()
-@_logged
+@_tool
 def query_db_config(table: str, limit: int = 50, app: str = "",
                     filter_column: str = "", filter_op: str = "eq",
                     filter_value: str = "") -> str:
@@ -534,8 +561,10 @@ class _BearerTokenGuard:
             await self._app(scope, receive, send)
             return
         import hmac
-        header = dict(scope.get("headers") or []).get(b"authorization", b"").decode()
-        expected = f"Bearer {self._token}"
+        # 全程 bytes 比對:str 版 compare_digest 遇非 ASCII 會 raise,
+        # decode 遇非 UTF-8 也會 raise——惡意 header 應得到 401 而非 500
+        header = dict(scope.get("headers") or []).get(b"authorization", b"")
+        expected = f"Bearer {self._token}".encode()
         if not hmac.compare_digest(header, expected):
             client = (scope.get("client") or ("?", 0))[0]
             log.warning("HTTP 401 Bearer 驗證失敗 client=%s path=%s",

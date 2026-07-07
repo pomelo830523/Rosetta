@@ -56,10 +56,17 @@ def _load(app: AppContext) -> dict:
     cache = _caches.setdefault(app.name, {"stamp": None})
     stamp = paths.state.stat().st_mtime_ns
     if cache["stamp"] != stamp:
-        cache["meta"] = [
+        meta = [
             json.loads(l) for l in paths.meta.read_text(encoding="utf-8").splitlines() if l
         ]
-        cache["vectors"] = np.load(paths.vectors)
+        vectors = np.load(paths.vectors)
+        if len(meta) != len(vectors):
+            raise ValueError(
+                f"app「{app.name}」語意索引不一致(meta {len(meta)} 筆 / "
+                f"vectors {len(vectors)} 筆),可能正在重建;請稍後重試,"
+                "持續發生則重跑 semantic_index --rebuild。")
+        cache["meta"] = meta
+        cache["vectors"] = vectors
         cache["state"] = json.loads(paths.state.read_text(encoding="utf-8"))
         cache["stamp"] = stamp
         import kb_log

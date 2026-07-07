@@ -215,6 +215,24 @@ def main() -> None:
         out = db_config.query_table("HOUSE", 2, app)
         check("filter:達上限出現截斷警示", "結果可能不完整" in out)
 
+    # 10b. datasource URL 解析(port optional)與 config 檔動態掃描
+    check("datasource URL 省略 port 用預設 3306",
+          db_config.parse_datasource_url("jdbc:mariadb://localhost/besthouse", "mariadb")
+          == ("localhost", 3306, "besthouse"))
+    check("datasource URL 含 port 照常解析",
+          db_config.parse_datasource_url("jdbc:mysql://db:3307/x?useSSL=false", "mariadb")
+          == ("db", 3307, "x"))
+    check("oracle URL 省略 port 用預設 1521",
+          db_config.parse_datasource_url("jdbc:oracle:thin:@dbhost/XEPDB1", "oracle")
+          == ("dbhost", 1521, "XEPDB1"))
+    config_names = [p.name for p in app_config.config_files(app)]
+    check("config 檔動態掃描:application.yml 基底在最前",
+          bool(config_names) and config_names[0] == "application.yml",
+          ", ".join(config_names))
+    check("config 檔動態掃描:application-local.yml 最後(覆蓋一切)",
+          "application-local.yml" not in config_names
+          or config_names[-1] == "application-local.yml")
+
     # 11. Phase 10 維運強化:glossary lint / read_source 範圍 / health / html 切塊
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
     import glossary_lint

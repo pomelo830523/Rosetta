@@ -11,6 +11,7 @@
 
 import hashlib
 import json
+import os
 import sys
 import time
 
@@ -89,6 +90,17 @@ def build_nl_text(sym: graph_db.Symbol, lines: list[str], injection: dict[str, s
     return " | ".join(p for p in parts if p)
 
 
+def _embedder_version() -> str:
+    """fastembed 版本:升版可能改變同名 model 的 pooling 行為(0.5.1 → 0.6 的
+    e5 CLS→mean pooling),索引與查詢向量空間會不一致且無任何錯誤,
+    只能靠版本入 state、變更即全量重建來防。"""
+    try:
+        from importlib.metadata import version
+        return version("fastembed")
+    except Exception:
+        return "unknown"
+
+
 def _glossary_hash(app: AppContext) -> str:
     if not app.glossary_path.is_file():
         return "none"
@@ -124,6 +136,7 @@ def build(app: AppContext, rebuild: bool = False) -> str:
     full = (
         rebuild
         or state.get("model") != model_name
+        or state.get("fastembed") != _embedder_version()
         or state.get("glossary_sha") != glossary_sha
         or not (paths.meta.is_file() and paths.vectors.is_file())
     )
@@ -185,18 +198,27 @@ def build(app: AppContext, rebuild: bool = False) -> str:
     else:
         all_vectors = new_vectors
 
+    # 寫入順序:meta/vectors 先寫 tmp 再原子換名,state(reload 觸發點)最後——
+    # 冷啟動的 server 恰逢重建時也不會讀到半套檔案
     app.index_dir.mkdir(parents=True, exist_ok=True)
-    paths.meta.write_text(
+    meta_tmp = paths.meta.with_name(paths.meta.name + ".tmp")
+    meta_tmp.write_text(
         "\n".join(json.dumps(m, ensure_ascii=False) for m in all_meta), encoding="utf-8")
-    np.save(paths.vectors, all_vectors.astype(np.float32))
-    paths.state.write_text(json.dumps({
+    os.replace(meta_tmp, paths.meta)
+    vectors_tmp = paths.vectors.with_name("vectors.tmp.npy")
+    np.save(vectors_tmp, all_vectors.astype(np.float32))
+    os.replace(vectors_tmp, paths.vectors)
+    state_tmp = paths.state.with_name(paths.state.name + ".tmp")
+    state_tmp.write_text(json.dumps({
         "model": model_name,
+        "fastembed": _embedder_version(),
         "dim": int(all_vectors.shape[1]) if len(all_vectors) else 0,
         "glossary_sha": glossary_sha,
         "files": file_hashes,
         "built_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "codegraph_schema": graph_db.TESTED_SCHEMA_VERSION,
     }, ensure_ascii=False, indent=1), encoding="utf-8")
+    os.replace(state_tmp, paths.state)
 
     mode = "全量重建" if full else f"增量({len(changed_files)} 檔變更)"
     return (f"[{app.name}] {mode}:{len(all_meta)} symbols(本次嵌入 {len(new_meta)},"

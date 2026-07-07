@@ -37,8 +37,24 @@ class TableFilter:
     op: str      # eq | contains
     value: str
 
-_MARIADB_URL_RE = re.compile(r"jdbc:(?:mariadb|mysql)://([^:/]+):(\d+)/([^?]+)")
-_ORACLE_URL_RE = re.compile(r"jdbc:oracle:thin:@(?://)?([^:/]+):(\d+)[:/]([^?]+)")
+# port 為 optional:jdbc:mariadb://host/db(省略 = 預設埠)是合法寫法
+_MARIADB_URL_RE = re.compile(r"jdbc:(?:mariadb|mysql)://([^:/?]+)(?::(\d+))?/([^?]+)")
+_ORACLE_URL_RE = re.compile(r"jdbc:oracle:thin:@(?://)?([^:/]+)(?::(\d+))?[:/]([^?]+)")
+_DEFAULT_PORTS = {"mariadb": 3306, "oracle": 1521}
+
+
+def parse_datasource_url(url: str, driver: str) -> tuple[str, int, str]:
+    """解析 JDBC URL → (host, port, database);port 省略時用該 driver 預設埠。
+
+    不合法時 raise ValueError(訊息含原始 URL 供管理員排查)。
+    """
+    pattern = _ORACLE_URL_RE if driver == "oracle" else _MARIADB_URL_RE
+    match = pattern.match(url or "")
+    if not match:
+        raise ValueError(
+            f"無法以 {driver} 格式解析 spring.datasource.url:{url or '(未設定)'}")
+    host, port, database = match.groups()
+    return host, int(port) if port else _DEFAULT_PORTS[driver], database
 
 
 def _connection_params(app: AppContext) -> dict:
@@ -48,17 +64,11 @@ def _connection_params(app: AppContext) -> dict:
     def raw(key: str) -> str:
         return config.get(key, ("", ""))[0]
 
-    url = raw("spring.datasource.url")
-    pattern = _ORACLE_URL_RE if app.db.driver == "oracle" else _MARIADB_URL_RE
-    match = pattern.match(url)
-    if not match:
-        raise ValueError(
-            f"無法以 {app.db.driver} 格式解析 spring.datasource.url:{url or '(未設定)'}"
-        )
-    host, port, database = match.groups()
+    host, port, database = parse_datasource_url(
+        raw("spring.datasource.url"), app.db.driver)
     return {
         "host": host,
-        "port": int(port),
+        "port": port,
         "database": database,
         "user": raw("spring.datasource.username"),
         "password": raw("spring.datasource.password"),
