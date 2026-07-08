@@ -62,6 +62,12 @@ def lint_app(app: kb_config.AppContext) -> tuple[int, list[str]]:
     dead = 0
     warned = 0
     for entry in entries:
+        if not entry.it_terms:
+            # 常見成因:欄位名寫錯(如寫成 maps_to),load_glossary 會靜默略過
+            dead += 1
+            lines.append(f"[{app.name}] DEAD「{entry.term}」:未填 it_terms"
+                         "(檢查該條目欄位名是否寫錯,應為 it_terms)")
+            continue
         misses = []
         hits = 0
         for term in entry.it_terms:

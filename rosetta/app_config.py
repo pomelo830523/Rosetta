@@ -67,24 +67,42 @@ def mask_value(key: str, value: str) -> str:
     return re.sub(r"(password=)[^&;\s]+", r"\1****", value, flags=re.IGNORECASE)
 
 
-# yml「key: value」行(key 可含 . - [] 引號);properties 的 key=value 由
-# mask_value 的 password= 規則涵蓋
+# yml「key: value」行(key 可含 . - [] 引號)與 properties/.env「key=value」行
 _YML_KV_RE = re.compile(r"""^(\s*["']?[\w.\-\[\]]+["']?\s*:\s+)(\S.*)$""")
+_PROP_KV_RE = re.compile(r"^(\s*[\w.\-]+\s*=\s*)(\S.*)$")
+_BLOCK_SCALAR_RE = re.compile(r"^[|>][+-]?\d*\s*$")  # yml 區塊純量指示:| > |- >+2 …
+# 行內片段(yml flow style、URL query):password: x / api-key=x
+_INLINE_SENSITIVE_RE = re.compile(
+    r"((?:password|passwd|secret|token|api[-_]?key|credential|private[-_]?key)"
+    r"""["']?\s*[:=]\s*)([^,}&;\s]+)""", re.IGNORECASE)
 
 
 def mask_text(text: str) -> str:
-    """逐行遮罩 yml/properties 純文字中的敏感值(read_source 用)。
+    """逐行遮罩 yml/properties/.env 純文字中的敏感值(read_source 用)。
 
-    行數不變,行號引用不受影響;非敏感行原樣保留。
+    行數不變,行號引用不受影響;非敏感行原樣保留。涵蓋:
+    yml「key: value」、properties/.env「key=value」、flow style 與 URL 的
+    行內片段、block scalar(| / >)的縮排續行。
     """
-    masked_lines = []
+    masked_lines: list[str] = []
+    block_indent = -1  # ≥0 = 上一個敏感 key 是 block scalar,其縮排;續行全遮
     for line in text.splitlines():
-        kv = _YML_KV_RE.match(line)
+        if block_indent >= 0:
+            if not line.strip():
+                masked_lines.append(line)  # 空行保留(block 可含空行,尚未結束)
+                continue
+            indent = len(line) - len(line.lstrip())
+            if indent > block_indent:
+                masked_lines.append(" " * indent + _MASK)
+                continue
+            block_indent = -1  # 縮排回頭,block 結束
+        kv = _YML_KV_RE.match(line) or _PROP_KV_RE.match(line)
         if kv and _SENSITIVE_KEY_RE.search(kv.group(1)):
+            if _BLOCK_SCALAR_RE.match(kv.group(2)):
+                block_indent = len(line) - len(line.lstrip())
             masked_lines.append(kv.group(1) + _MASK)
         else:
-            masked_lines.append(
-                re.sub(r"(password=)[^&;\s]+", r"\1****", line, flags=re.IGNORECASE))
+            masked_lines.append(_INLINE_SENSITIVE_RE.sub(r"\1****", line))
     return "\n".join(masked_lines)
 
 

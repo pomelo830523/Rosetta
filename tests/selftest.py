@@ -166,7 +166,6 @@ def main() -> None:
     check("目錄穿越被擋", root not in target_path.parents and target_path != root)
 
     # 9. 歧義釐清訊號(SPEC §4.8:S1 多義 / S2 分散 / S3 空手)
-    import kb_server
     from semantic_search import SemanticHit
 
     out = kb_server.lookup_term("戶梯比和管理費的規則", app="besthouse")

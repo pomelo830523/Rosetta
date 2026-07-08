@@ -34,7 +34,7 @@ class FilterError(ValueError):
 @dataclass(frozen=True)
 class TableFilter:
     column: str
-    op: str      # eq | contains
+    op: str      # VALID_FILTER_OPS 之一:eq | starts_with | contains
     value: str
 
 # port 為 optional:jdbc:mariadb://host/db(省略 = 預設埠)是合法寫法

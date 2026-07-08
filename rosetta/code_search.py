@@ -21,14 +21,19 @@ _TYPE_DECL_RE = re.compile(r"\b(class|enum|interface|record)\s+\w+")
 
 
 def iter_source_files(app: AppContext):
-    """走訪 app 的所有原始碼檔案,跳過 node_modules / target / dist 等。"""
+    """走訪 app 的所有原始碼檔案,跳過 node_modules / target / dist 等。
+
+    search_dirs 巢狀/重疊時同一檔案只回一次(避免重複掃描與重複命中)。
+    """
+    seen: set = set()
     for base in app.search_dirs:
         if not base.exists():
             continue
         for pattern in SOURCE_GLOBS:
             for path in base.rglob(pattern):
-                if any(part in SKIP_DIRS for part in path.parts):
+                if path in seen or any(part in SKIP_DIRS for part in path.parts):
                     continue
+                seen.add(path)
                 yield path
 
 

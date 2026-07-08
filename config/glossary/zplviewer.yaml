@@ -1,4 +1,4 @@
 # zplviewer glossary — 業務用語 → IT 對照
 # 骨架可用 extract_glossary.py --app zplviewer 產生後人工挑選併入。
-# 格式同 besthouse.yaml:term / aliases / maps_to。
+# 格式同 besthouse.yaml:term / aliases / it_terms / note。
 []

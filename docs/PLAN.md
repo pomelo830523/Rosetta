@@ -98,6 +98,30 @@
   雜訊分(~0.82),正確路由。selftest 50/50(新增 5 項)、
   multi-AP 15/15(新增 2 項:無索引 AP 略過、glossary 分組隔離)。
 
+## Phase 12 — 全專案 review 修正 ✅(2026-07-07)
+
+- HTTP 模式 tool 改 async offload(慢查詢不再卡整個 event loop)、config 檔
+  動態掃描(profile 檔不漏值)、datasource URL port optional、Bearer 全程 bytes
+  比對、索引原子寫入 + fastembed 版本入 state(升版自動全量重建)、
+  sqlite 連線 closing 等 8 項;selftest 57/57。細項見 TODO.md Phase 12。
+
+## Phase 13 — review 第二輪修正 ✅(2026-07-08)
+
+- **read_source 遮罩繞道封堵**(直接讀 yml 原文也遮敏感值)、search_code
+  top_k 上限 10、embedding model 載入加鎖、eval 與 production 共用排序與語料
+  (hybrid_rank / search_prefixes)、scripts 參數解析統一、HTTP 層拆
+  http_transport.py 等 12 項;selftest 61/61。細項見 TODO.md Phase 13。
+
+## Phase 14 — review 第三輪修正 + 單元測試 ✅(2026-07-08)
+
+- mask_text 補三個漏網形式(properties/.env 的 key=value、yml block scalar
+  續行、flow style 行內)、glossary 註解欄位名修正(maps_to→it_terms)、
+  lint 對空 it_terms 給明確訊息、iter_source_files 去重、KB_LOG_FILE 改
+  RotatingFileHandler(5MB×3)。
+- **單元測試**:tests/unit/ 181 項(pytest;不依賴外部 repo/DB/embedding model,
+  全部走 tmp 假資產與 eval/fixture-app),coverage 81%(rosetta + scripts);
+  selftest 61/61、multi-AP 15/15 無回歸。細項見 TODO.md Phase 14。
+
 ## 風險
 
 | 風險 | 緩解 |

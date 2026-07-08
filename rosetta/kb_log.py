@@ -2,7 +2,8 @@
 
 **stdio 模式下 stdout 是 MCP 協定通道,log 絕不能寫 stdout**——
 一律走 stderr(Claude Code 會收進 %LOCALAPPDATA%\\claude-cli-nodejs\\Cache\\
-<project>\\mcp-logs-*);KB_LOG_FILE 有設定時另寫一份到檔案(集中部署用)。
+<project>\\mcp-logs-*);KB_LOG_FILE 有設定時另寫一份到檔案
+(集中部署用;自動輪替 5MB × 3 份,不無限成長)。
 
 環境變數:
   KB_LOG_LEVEL = DEBUG | INFO(預設)| WARNING | ERROR
@@ -14,6 +15,7 @@ ERROR 記 DB 連線失敗等;DEBUG 才記完整查詢字串。
 """
 
 import logging
+import logging.handlers
 import os
 import sys
 
@@ -38,7 +40,9 @@ def setup() -> logging.Logger:
     log_file = os.environ.get("KB_LOG_FILE", "")
     if log_file:
         try:
-            file_handler = logging.FileHandler(log_file, encoding="utf-8")
+            # 集中部署掛排程會長期累積:輪替上限 5MB × 3 份,不無限成長
+            file_handler = logging.handlers.RotatingFileHandler(
+                log_file, encoding="utf-8", maxBytes=5_000_000, backupCount=3)
             file_handler.setFormatter(formatter)
             logger.addHandler(file_handler)
         except OSError as exc:

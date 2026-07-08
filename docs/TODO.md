@@ -100,6 +100,24 @@
 - [x] 刪除 code-kb-comparison.md(過時,模板本就排除)
 - [x] selftest 新增 4 項 → 61/61;multi-AP 15/15 無回歸;模板重產
 
+## Phase 14 — review 第三輪修正 + 單元測試 ✅(2026-07-08)
+
+- [x] mask_text 補漏網形式:properties/.env「key=value」的敏感 key、
+      yml block scalar(| / >)縮排續行、yml flow style 行內片段
+      (TDD:先寫 4 個 RED 測試再實作)
+- [x] glossary yaml 表頭註解欄位名修正:maps_to → it_terms
+      (enhancesql / zplviewer;照舊註解寫的條目會被靜默忽略)
+- [x] glossary_lint:it_terms 為空的條目給明確 DEAD 訊息(提示欄位名寫錯)
+- [x] code_search.iter_source_files:search_dirs 巢狀/重疊時去重
+- [x] db_config.TableFilter 註解補 starts_with
+- [x] kb_log:KB_LOG_FILE 改 RotatingFileHandler(5MB × 3,不無限成長)
+- [x] tests/selftest.py 移除重複 import;PLAN.md 補 Phase 12~14 摘要
+- [x] **單元測試**:tests/unit/ 共 181 項(pytest + pytest-cov,
+      requirements-dev.txt);不依賴 BestHouse repo / MariaDB / embedding model
+      (tmp 假資產 + eval/fixture-app + monkeypatch embed / 假 pymysql /
+      假 codegraph.db);coverage 81%(rosetta 各模組 79~100%,kb_server 84%)
+- [x] selftest 61/61、multi-AP 15/15 無回歸;模板重產
+
 ## 決定不做(記錄於 SPEC §6 非目標)
 - 變更歷史查詢(get_change_history):git 歷史量體風險 > 價值,2026-07-06 定案不做
 

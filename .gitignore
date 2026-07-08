@@ -19,3 +19,8 @@ Thumbs.db
 
 # Logs
 *.log
+
+# 測試產物
+.pytest_cache/
+.coverage
+htmlcov/

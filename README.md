@@ -116,7 +116,8 @@ scripts/               維運腳本
   script_args.py       scripts 共用的 --flag 參數解析
   setup.ps1            venv + 依賴 + .mcp.json 範本 + selftest
   make_template.ps1    產出通用模板(nl-query-kb-template/;code 只在這裡維護)
-tests/                 selftest.py(功能驗證)、selftest_multiapp.py(multi-AP 隔離)
+tests/                 selftest.py(功能驗證)、selftest_multiapp.py(multi-AP 隔離)、
+                       unit/(pytest 單元測試,無外部依賴,coverage 81%)
 config/                kb.config.yaml + glossary/<app>.yaml(團隊資產,進版控)
 eval/                  題庫、驗收基準、fixture app
 docs/                  SPEC / QUICKSTART / PLAN / TODO / ENTERPRISE-GAP
@@ -136,8 +137,10 @@ $env:KB_TRANSPORT="http"; $env:KB_AUTH_TOKEN="<token>"
 .\.venv\Scripts\python.exe -X utf8 rosetta\kb_server.py
 
 # 驗證
-.\.venv\Scripts\python.exe -X utf8 tests\selftest.py           # 功能驗證
+.\.venv\Scripts\python.exe -X utf8 tests\selftest.py           # 功能驗證(需 BestHouse 環境)
 .\.venv\Scripts\python.exe -X utf8 tests\selftest_multiapp.py  # multi-AP 隔離
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt        # pytest(一次)
+.\.venv\Scripts\python.exe -X utf8 -m pytest tests\unit --cov=rosetta --cov=scripts  # 單元測試(無外部依賴)
 ```
 
 改了 server code → 重啟(stdio 則 `/mcp` Reconnect),並重跑 `scripts\make_template.ps1`
