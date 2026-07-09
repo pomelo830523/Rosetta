@@ -21,10 +21,12 @@ $CoreFiles = @(
 )
 # 維運腳本(複製到模板的 scripts/)
 $ScriptFiles = @("index_all.py", "extract_glossary.py", "glossary_lint.py",
-                 "log_report.py", "script_args.py", "setup.ps1")
+                 "log_report.py", "script_args.py", "setup.ps1",
+                 "fleet_eval.py", "eval_ablation.py")  # 引擎決策實驗(FLEET-EVAL.md)
 # 刻意排除(本站專屬):config/kb.config.yaml、config/glossary/、tests/、
 # scripts/eval_retrieval.py(依賴 eval/ 題庫)、
-# scripts/make_template.ps1、eval/、.venv/.semantic/.codegraph、code-kb-comparison.md
+# scripts/make_template.ps1、eval/(除 FLEET-EVAL.md 另複製)、
+# .venv/.semantic/.codegraph、code-kb-comparison.md
 
 New-Item -ItemType Directory -Force $OutDir | Out-Null
 New-Item -ItemType Directory -Force (Join-Path $OutDir "rosetta") | Out-Null
@@ -38,6 +40,7 @@ foreach ($f in $ScriptFiles) {
     Copy-Item (Join-Path $KbDir "scripts\$f") (Join-Path $OutDir "scripts\$f") -Force
 }
 Copy-Item (Join-Path $KbDir "requirements.txt") (Join-Path $OutDir "requirements.txt") -Force
+Copy-Item (Join-Path $KbDir "requirements-semantic.txt") (Join-Path $OutDir "requirements-semantic.txt") -Force
 
 # 模板專屬檔(template/ 目錄維護)
 Copy-Item (Join-Path $KbDir "template\README.md") (Join-Path $OutDir "README.md") -Force
@@ -45,6 +48,8 @@ Copy-Item (Join-Path $KbDir "template\kb.config.yaml.example") (Join-Path $OutDi
 
 # 架設文件隨模板走
 Copy-Item (Join-Path $KbDir "docs\QUICKSTART.md") (Join-Path $OutDir "QUICKSTART.md") -Force
+# 引擎決策實驗協定(QUICKSTART「進階」一節引用;與 QUICKSTART 同層)
+Copy-Item (Join-Path $KbDir "eval\FLEET-EVAL.md") (Join-Path $OutDir "FLEET-EVAL.md") -Force
 
 # .gitignore(kb.config.yaml 與 glossary 是團隊資產,要進版控,不在此列)
 $GitIgnore = @"

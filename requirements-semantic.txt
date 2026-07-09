@@ -1,0 +1,7 @@
+# 選配:語意索引引擎(engine: semantic / auto)與 app="all" 跨 AP 探索才需要。
+# 預設引擎是 grep——ablation 顯示在命名尚可、有維護 glossary 的 AP 上,
+# 語意索引相對 grep 幾乎零增益(見 docs/SPEC.md §4.2、eval/ABLATION.md)。
+# 何時安裝:某 AP 的 repo 大到查詢期 grep 掃描會慢、命名極差 glossary 補不動、
+#          或需要 app="all" 跨 AP 探索時,對該 AP 開 engine: semantic 並裝本檔。
+fastembed
+numpy

@@ -6,6 +6,9 @@ __pycache__/
 # 產生物(可重建)
 glossary.generated*.yaml
 .semantic/
+# 引擎決策實驗的逐次報告(協定 FLEET-EVAL.md、分析 ABLATION.md 仍進版控)
+eval/FLEET-REPORT.md
+eval/ABLATION-*.md
 
 # Claude Code 個人設定
 .claude/settings.local.json

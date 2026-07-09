@@ -85,13 +85,15 @@ def main() -> None:
         improved += top_after > top_before
     check("glossary 展開提升 grep 命中(至少 3/4 題)", improved >= 3, f"{improved}/{len(queries)}")
 
-    # 3. 語意檢索:zh/en/de/ja 口語都要命中目標 symbol(Phase 3 核心驗收)
+    # 3. 語意檢索(選配引擎):有建語意索引才驗 zh/en/de/ja 命中。
+    #    預設 engine=grep 不建索引時,semantic 與 app="all" 相關檢查一律略過(不算失敗,SPEC §4.2)。
     try:
         import semantic_search
         semantic_ready = semantic_search.available(app)
     except ImportError:
         semantic_ready = False
-    check("語意索引存在(.semantic/<app>/)", semantic_ready)
+    if not semantic_ready:
+        print("[SKIP] 語意索引未建(engine=grep 預設):semantic 與 app=all search_code 檢查略過")
     if semantic_ready:
         questions_path = kb_config.ROOT_DIR / "eval" / "questions.yaml"
         ja_map = {q["id"]: q.get("ja", "")
@@ -276,10 +278,15 @@ def main() -> None:
           blocks[0][0] == 1 and blocks[-1][1] == 100 and len(blocks) >= 3)
 
     # 12. Phase 11 跨 AP 聯合查詢(app="all",SPEC §4.9)
-    out = kb_server.search_code("不含車位的每坪單價怎麼算", app="all")
-    check("all:各 AP 分組列出", all(f"## {n}" in out for n in config.app_names()))
-    check("all:besthouse 命中目標 symbol", "priceperpingwithoutparking" in out.lower())
-    check("all:discovery 不含程式碼內文", "```" not in out and "discovery" in out)
+    #     search_code all 只走 semantic:需該 AP 有語意索引,預設 grep 時略過;
+    #     lookup_term all 僅用 glossary,無此限制,照常驗。
+    if semantic_ready:
+        out = kb_server.search_code("不含車位的每坪單價怎麼算", app="all")
+        check("all:各 AP 分組列出", all(f"## {n}" in out for n in config.app_names()))
+        check("all:besthouse 命中目標 symbol", "priceperpingwithoutparking" in out.lower())
+        check("all:discovery 不含程式碼內文", "```" not in out and "discovery" in out)
+    else:
+        print("[SKIP] app=all search_code 需語意索引(engine=grep 預設),略過")
     out = kb_server.lookup_term("權重", app="all")
     check("all:lookup_term 只列有命中的 AP",
           "besthouse" in out and "RATING_DIMENSION" in out

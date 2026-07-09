@@ -7,8 +7,9 @@
 
 - **一隊一台**:不管幾個 AP 都只架一台 server;每個 AP 是設定檔裡的一個區塊
   (約 10 行)+ 一份對照表。「問題屬於哪個 AP」由 Claude 自動路由。
-- **引擎依賴鏈**:codegraph 建圖 → 語意索引 → semantic(正式引擎)。
-  `engine` 留 `auto`:索引未就緒時自動墊檔 grep(當天可用),就緒後自動切換。
+- **檢索引擎預設 grep**:命名尚可 + 有維護 glossary 時,語意索引相對 grep 幾乎零增益
+  (SPEC §4.2、eval/ABLATION.md),且省掉 embedding 套件與每晚重建。大型 repo / 命名極差 /
+  要 `app="all"` 跨 AP 探索的 AP,再把 `engine` 改 `semantic`(需裝 requirements-semantic.txt)。
 - **集中部署**:server 架團隊內部伺服器(HTTP + token),使用者零安裝;
   repo 與 DB 帳密不落地使用者電腦。
 
@@ -55,6 +56,10 @@ Copy-Item config\kb.config.yaml.example config\kb.config.yaml
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # venv + 依賴 + .mcp.json 範本
 ```
 
+`setup.ps1` 只裝核心依賴(`requirements.txt`,grep 引擎不需 embedding 套件)。
+**只有要對某 AP 開 `engine: semantic`(或用 `app="all"` 探索)時**,才另外裝:
+`.\.venv\Scripts\python.exe -m pip install -r requirements-semantic.txt`(fastembed + numpy)。
+
 模板不含 selftest(那是母站針對它管的 AP 寫的),setup 最後一步顯示
 「無 selftest,略過」屬正常;建議上線前仿母站的 `tests/selftest.py`
 為你的 AP 寫一份,驗證項目照抄再改斷言即可。
@@ -78,7 +83,7 @@ apps:
       driver: mariadb            # mariadb | oracle(oracle 程式就緒但未實測)
       table_whitelist: [YOUR_CONFIG_TABLE]
       sensitive_tables: {MEMBER: 含個資,排除}
-engine: auto
+engine: grep                     # 預設 grep;大型/命名極差/要 app=all 探索的 AP 再改 semantic
 ```
 
 - `description` 寫使用者聽得懂的一句話(路由準度取決於它)。
@@ -99,13 +104,18 @@ codegraph init .        # 建呼叫圖與 symbol 目錄 → .codegraph/codegraph
 codegraph status        # 確認索引完成
 ```
 
-**3b. 語意索引**(掛排程,日常只需要這一支):
+**3b. 例行索引**(掛排程,日常只需要這一支):
 
 ```powershell
 .\.venv\Scripts\python.exe -X utf8 scripts\index_all.py --pull
-# 逐 AP 自動執行:git pull → codegraph sync → 語意索引增量 → glossary lint
+# 逐 AP 自動執行:git pull → codegraph sync →(engine≠grep 才)語意索引增量 → glossary lint
 # 沒建過圖的 AP 會列出提示(回到 3a),不擋其他 AP
 ```
+
+預設 `engine: grep` 的 AP 只做 codegraph sync(供 `get_structure`)與 glossary lint,
+**不建語意索引**——不需要 3a 的圖也能用 grep 檢索與 config/DB 查詢(只是沒有
+`get_structure`)。只有把某 AP 改成 `engine: semantic` 時才會建語意索引,且需先裝
+`requirements-semantic.txt`(見步驟 1)。
 
 gitignore 歸屬:`.venv/`、`.semantic/` 在 **kb server repo**(模板已附);
 `.codegraph/` 在**各 AP repo**(請各 AP 團隊自行加入)。
@@ -160,6 +170,35 @@ claude mcp add --transport http rosetta http://localhost:8600/mcp --header "Auth
 | 對照表補詞 | 定期跑 `scripts\log_report.py`(需 KB_LOG_FILE):報表中「S3 空手 query」就是使用者查了但 KB 接不住的詞,挑高頻的補進 glossary |
 | 監控 | 排程打 `GET /health`;log 的 WARNING 是拒絕事件(白名單外查表/401 等),ERROR 是 DB 連線失敗 |
 | server code 更新 | 母站發佈新模板後,以新模板的 `rosetta\` 與 `scripts\` **整目錄覆蓋**本地同名目錄,然後重啟 server。`config\`(你的設定與 glossary)模板不含、不會被蓋;requirements.txt 有變時重跑 setup |
+
+## 進階:用實驗決定每個 AP 的引擎(grep vs 語意索引)
+
+預設 `engine: grep`。要不要為某個 AP 額外建語意索引(改 `semantic` / `auto`),
+**用數字決定,不要用猜的**——本專案附了一套逐 AP 量測實驗,完整協定見 `FLEET-EVAL.md`
+(指標、干擾控制、統計嚴謹性)。到 50 AP / 百萬行規模時,決策重心是「延遲 + 建置成本」,
+且必須逐 AP判定。判準(二選一「要不要建語意索引」):
+
+1. grep 查詢 **p95 > 1s** → 建語意索引(大型 repo,延遲驅動,不看品質)。
+2. grep 夠快、與 semantic top-k 高度重疊(Jaccard ≥ 0.6)、命名健康 → **grep**(等價又便宜)。
+3. grep 夠快但分歧大 / 命名貧弱 → 標註 10~30 題,semantic 命中率贏 grep ≥ +10% 才值得建索引。
+
+跑法(分階段,省建置成本):
+
+```powershell
+# Tier 1+2:全 AP 自動量測(規模/延遲/分歧/命名),不需標註 → eval\FLEET-REPORT.md
+.\.venv\Scripts\python.exe -X utf8 scripts\fleet_eval.py --queries 60
+#   報告把每個 AP 標成三類:延遲驅動要 semantic / grep 足矣 / 待 Tier 3
+
+# 量 semantic 延遲與分歧前,該 AP 要先有語意索引(需先裝 requirements-semantic.txt):
+.\.venv\Scripts\python.exe -X utf8 scripts\fleet_eval.py --app <app> --build-missing --queries 60
+
+# Tier 3:對「待 Tier 3」的 AP 標註 eval\questions-<app>.yaml(格式見 FLEET-EVAL.md),再:
+.\.venv\Scripts\python.exe -X utf8 scripts\eval_ablation.py --app <app> --langs zh,en
+```
+
+決策門檻(延遲預算、Jaccard、命中率 Δ、命名健康)都在 `scripts\fleet_eval.py` 頂部常數,
+可依團隊需求調整;報告末段的「全艦隊 rollup」會加總「要建索引的 AP」之首建時間與常駐記憶體,
+直接告訴你塞不塞得進維護窗與單機預算。
 
 ## 常見陷阱
 

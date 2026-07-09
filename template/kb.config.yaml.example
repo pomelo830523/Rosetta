@@ -26,8 +26,10 @@ apps:
   # 第二個以上的 AP 依樣新增區塊;tool 數量固定 7 個,不隨 AP 數成長
 
 # 全域預設(app 區塊可覆蓋)
-engine: auto          # 留 auto:有索引走 semantic(正式引擎),索引未就緒自動墊檔 grep;
-                      # 手動鎖 grep 只適合不打算維護索引的丟棄式小 AP
-embed_model: ""       # 空 = e5-large(品質佳);輕量可改
+engine: grep          # 預設 grep:命名尚可 + 有維護 glossary 時,語意索引相對 grep
+                      # 幾乎零增益(見 SPEC §4.2、eval/ABLATION.md),且免裝 embedding 套件。
+                      # 改 semantic/auto 的時機:repo 大到查詢期 grep 掃描會慢、命名極差
+                      # glossary 補不動、或要 app="all" 跨 AP 探索(需另裝 requirements-semantic.txt)。
+embed_model: ""       # 僅 semantic/auto 用;空 = e5-large(品質佳);輕量可改
                       # sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
                       # (嵌入快 15 倍;de 原文直查較弱,經 Claude 歸一化後 zh/en 無差)

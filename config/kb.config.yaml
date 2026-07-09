@@ -18,6 +18,9 @@ apps:
     resources_dir: besthouse-backend/src/main/resources
     entity_dir: besthouse-backend/src/main/java/com/besthouse/entity
     glossary: glossary/besthouse.yaml
+    engine: auto                 # 母站的驗證/eval 參考 AP:保留語意索引(auto=有索引走 semantic,
+                                 # 否則墊檔 grep),供 selftest / eval_retrieval / app="all" 測試。
+                                 # 其他 AP 走全域預設 grep。需 requirements-semantic.txt。
     db:
       driver: mariadb            # mariadb | oracle(oracle 需 python-oracledb,尚未實測)
       table_whitelist: [RATING_DIMENSION, FILTER_RULE, HOUSE]
@@ -46,5 +49,8 @@ apps:
     # 無 DB,query_db_config 不開放任何表
 
 # 全域預設(app 區塊可覆蓋)
-engine: auto          # auto = 有語意索引用 semantic,否則 grep;可強制 semantic | grep
-embed_model: ""       # 空 = semantic_common.DEFAULT_MODEL;環境變數 KB_EMBED_MODEL 優先
+# 預設 grep:ablation(eval/ABLATION.md)實測——當 code 命名尚可、又有維護 glossary 時,
+# 語意索引相對 grep+glossary 幾乎零檢索增益(besthouse zh+en 18/20 vs 17/20,且差異落在非 code 題)。
+# semantic 保留為選配:大型 repo(查詢期 grep 掃描會慢)、命名極差、或需要 app="all" 跨 AP 探索時再開。
+engine: grep          # grep(預設)| semantic | auto(有語意索引用 semantic,否則墊檔 grep)
+embed_model: ""       # 僅 semantic / auto 用;空 = semantic_common.DEFAULT_MODEL,環境變數 KB_EMBED_MODEL 優先

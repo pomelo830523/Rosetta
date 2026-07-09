@@ -1,7 +1,11 @@
-"""批次索引:逐 AP(可選 git pull →)codegraph sync → 語意索引增量。
+"""批次索引:逐 AP(可選 git pull →)codegraph sync →(engine≠grep 才)語意索引增量。
 
 首次 codegraph init 是一次性手動步驟(QUICKSTART);本腳本只對已建圖的 AP
 自動 sync。語意索引以 content-hash 增量,已最新的 AP 幾乎零成本,可掛排程/CI。
+
+**engine: grep 的 AP 不建語意索引**(預設;ablation 顯示零增益,SPEC §4.2)——
+只做 codegraph sync(供 get_structure)與 glossary lint。需要 app="all" 跨 AP 探索
+或大型 repo 加速時,把該 AP 的 engine 改回 semantic/auto 再跑本腳本。
 
 用法:.venv\\Scripts\\python.exe -X utf8 scripts\\index_all.py [--pull] [--rebuild] [--app NAME]
   --pull     先在各 AP 的 repo_root 跑 git pull(伺服器集中部署用)
@@ -68,18 +72,31 @@ def main() -> int:
     for app in apps:
         if pull:
             print(_git_pull(app))
-        if not app.codegraph_db.is_file():
+        build_semantic = app.engine != "grep"  # grep AP 不建語意索引(SPEC §4.2)
+        has_graph = app.codegraph_db.is_file()
+
+        # codegraph 圖:語意索引的上游,也是 get_structure 的唯一來源
+        if has_graph:
+            print(_codegraph_sync(app))
+        elif build_semantic:
             print(f"[{app.name}] 缺 codegraph 圖({app.codegraph_db}),跳過語意索引;"
                   "請先在該 repo 跑一次 codegraph init(QUICKSTART 步驟 3)。")
             failures += 1
             continue
-        print(_codegraph_sync(app))
-        try:
-            print(semantic_index.build(app, rebuild=rebuild))
-        except Exception as exc:  # 單一 AP 失敗不擋其他 AP(批次跑一晚的前提)
-            print(f"[{app.name}] 語意索引失敗:{exc}")
-            failures += 1
-            continue
+        else:
+            print(f"[{app.name}] engine=grep 且無 codegraph 圖:get_structure 不可用,"
+                  "grep 檢索與 config/DB 查詢正常。")
+
+        if build_semantic:
+            try:
+                print(semantic_index.build(app, rebuild=rebuild))
+            except Exception as exc:  # 單一 AP 失敗不擋其他 AP(批次跑一晚的前提)
+                print(f"[{app.name}] 語意索引失敗:{exc}")
+                failures += 1
+                continue
+        else:
+            print(f"[{app.name}] engine=grep,略過語意索引建置(單一 AP 檢索走 grep)。")
+
         # glossary 防腐化檢測:DEAD 條目只警示不擋索引(對照表修復是人工作業)
         import glossary_lint
         _, lint_lines = glossary_lint.lint_app(app)

@@ -8,7 +8,7 @@
 ## 上手
 
 ```powershell
-Copy-Item config\kb.config.yaml.example config\kb.config.yaml   # 填你的 AP 區塊(engine 留 auto)
+Copy-Item config\kb.config.yaml.example config\kb.config.yaml   # 填你的 AP 區塊(engine 預設 grep)
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1
 
 npm install -g @colbymchenry/codegraph            # CLI 裝一次
@@ -18,7 +18,10 @@ cd <AP repo 根>; codegraph init .                 # 每 AP 建一次圖
 .venv\Scripts\python.exe -X utf8 scripts\index_all.py --pull   # 日常排程只掛這支
 ```
 
-索引未建好之前 `auto` 自動以 grep 墊檔(當天可用),索引完成後自動切 semantic。
+預設 `engine: grep`:即時讀原始碼,不需 embedding、當天可用。語意索引為選配——
+命名尚可 + 有維護 glossary 時相對 grep 幾乎零增益(見 QUICKSTART 與 SPEC §4.2);
+大型 repo / 命名極差 / 要 `app="all"` 探索的 AP 才改 `engine: semantic`
+(需 `pip install -r requirements-semantic.txt`)。
 
 ## 檔案
 
@@ -47,6 +50,7 @@ cd <AP repo 根>; codegraph init .                 # 每 AP 建一次圖
 
 - Oracle driver 就緒未實測;首個 Oracle AP 前先驗。
 - 呼叫圖(tree-sitter)缺 DI/反射邊,影響評估請交叉確認。
-- 封閉環境:embedding model 先在可連網機器建一次索引,把 fastembed cache 帶入。
+- 封閉環境(僅用到 `engine: semantic` 時):embedding model 先在可連網機器建一次索引,
+  把 fastembed cache 帶入;純 grep 部署無此需求。
 - selftest 需按你的 AP 客製(參考 BestHouse 的 tests/selftest.py)。
 - `.ps1` 檔要 UTF-8 with BOM;venv 綁絕對路徑,搬移後重跑 scripts\setup.ps1。

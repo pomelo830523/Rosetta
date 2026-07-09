@@ -2,6 +2,5 @@ mcp[cli]
 anyio
 pyyaml
 pymysql
-# semantic index: local ONNX embedding, no cloud dependency
-fastembed
-numpy
+# 語意索引引擎為選配(預設 grep),依賴見 requirements-semantic.txt;
+# 純 grep 部署不需安裝——server 偵測到缺套件會自動降級為 grep(SPEC §4.2)。

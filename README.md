@@ -51,8 +51,9 @@ sequenceDiagram
 1. **業務用語對照(glossary)**:「權重」「被刷掉」這類口語 → 精確的
    class/欄位/config key,每 AP 一份 YAML,缺詞再補;
    防腐化 lint 自動檢測 rename 造成的失效條目。
-2. **多語語意檢索**:本地 embedding(離線、不外送),口語提問可同時命中
-   英文 identifier 與中文註解;索引未建好前自動以 grep 墊檔,當天可用。
+2. **多語檢索**:預設 grep 引擎(英文 identifier + 中文 bigram 註解 + glossary 展開三合一);
+   語意 embedding 為選配加速器,大型 repo 或命名極差時再開。實測:命名尚可且有維護
+   glossary 時,語意索引相對 grep 幾乎零增益(`eval/ABLATION.md`)。
 3. **呼叫鏈結構**:codegraph 圖索引,回答「被誰用/用了誰/改了影響誰」。
 4. **現值查詢**:application*.yml 與 DB 設定表即時讀取——權重、門檻這類
    邏輯存在 DB,只有現值可信;支援受限過濾精準取單筆(白名單 + 參數繫結)。
@@ -64,6 +65,71 @@ sequenceDiagram
 7. **唯讀安全**:不寫檔、不執行;DB 只 SELECT 白名單表(個資表明示排除)、
    敏感 config 值遮罩(`get_app_config` 與 `read_source` 讀 yml/properties
    皆遮罩,無繞道)、防目錄穿越、HTTP 模式 Bearer 認證。
+
+## 索引 pipeline 與向量索引(口語為什麼能命中程式碼)
+
+> 註:語意向量索引為**選配**(預設引擎是 grep;實測在命名尚可、有維護 glossary 的 AP 上
+> 相對 grep 幾乎零增益,見 `eval/ABLATION.md`)。以下說明的是「開啟 semantic 時」的運作,
+> 以及它相對 grep 獨有的能力(純語意換句話說的匹配、可預建以支撐 `app="all"` 跨 AP 探索)。
+
+檢索分兩個階段:**離線建索引**(排程)與**線上查詢**(< 1 秒)。
+
+```mermaid
+flowchart LR
+    subgraph offline["離線:索引 pipeline(index_all.py,每晚排程)"]
+        direction LR
+        pull["git pull<br>(拉最新 code)"] --> cg["codegraph sync<br>(symbol 目錄+呼叫圖)"]
+        cg --> si["語意索引<br>(NL 訊號→向量)"] --> lint["glossary lint<br>(對照表防腐化)"]
+    end
+    si --> store[(".semantic/&lt;app&gt;/<br>meta.jsonl 名冊<br>vectors.npy 座標<br>state.json 增量依據")]
+    store --> q["線上查詢:問題轉向量<br>→ 內積比距離 → 字面加分 → top-k"]
+```
+
+**向量索引是一張「語意地圖」**:embedding model 把每段文字變成一組數字座標
+(e5-large 為 1024 維),意思相近的文字座標會靠近。建索引 = 把每個 symbol
+釘上地圖;查詢 = 把問題也轉成座標、找最近的釘子。比的是「意思的距離」而非
+「共同的字」,所以「每坪多少錢」能命中 `calculatePricePerPingWithoutParking`
+——兩者沒有任何共同字,grep 做不到。
+
+**每個 symbol 進地圖前,先組「NL 訊號」而非整段 code**(embedding model 擅長
+自然語言,`if/return` 只是噪音)。訊號共五種,以不含車位單價公式為例:
+
+```
+calculatePricePerPingWithoutParking          ← ① identifier 本身+拆詞(calculate price per ping …)
+method | HouseService | house service        ← ② 種類+所屬 class(拆詞)
+@Column(name="TOTAL_PRICE") 等               ← ③ annotation(DB 欄位名一併進訊號)
+計算不含車位的每坪單價                        ← ④ 宣告上方+行尾註解(自原始碼 UTF-8 抽取)
+不含車位單價 每坪多少錢 扣掉車位的價格 …      ← ⑤ glossary 反向注入(業務詞整串)
+```
+
+五種訊號缺一還有四:method 取名再爛(如 `aaa`),只要有註解(④)或
+glossary 對照(⑤),照樣命中;五種全缺才會在語意檢索中隱形。
+
+**線上查詢五步**(以「不含車位的每坪單價怎麼算?」為例):
+
+1. glossary 展開:命中「不含車位單價」→ 得到 `calculate/price/ping/parking…`
+2. 問題轉向量(唯一一次 model 運算)
+3. 與全部 symbol 向量做內積(約 1k symbols < 1ms)
+4. 字面加分:identifier 命中查詢詞/展開詞的往前排
+   (`calculatePricePerPingWithoutParking` 命中 5 詞,壓過只沾 `price` 的 `totalPrice`)
+5. 回傳 top-k 的檔名:行號 + 原始碼 + 一層呼叫鏈
+
+**增量**:排程以 codegraph 的 content-hash 比對,只重嵌有變更的檔案——
+AP 沒 commit 時幾乎零成本;換 model 或改 glossary 自動全量重建(座標系變了,
+整張地圖重畫)。
+
+### 提升命中率的實務手冊(命名很爛的舊系統怎麼辦?)
+
+| 優先 | 作法 | 成本 | 為什麼有效 |
+|---|---|---|---|
+| 1 | **補 glossary**:業務詞 → `it_terms` 指到 method/欄位 | 一條 YAML | 雙重生效:索引期注入語意(⑤)+ 查詢期字面加分精確命中;名稱是 `aaa` 也救得回來 |
+| 2 | **關鍵 method 補一行中文註解**(挑常被問的公式/規則) | 一行 `//` | 整句進訊號④,效果 ≈ 取個好名稱 |
+| 3 | **用 log 報表決定補什麼**:`log_report.py` 的「S3 空手 query」= 使用者查了但 KB 接不住的詞 | 每月看一次 | 缺詞再補從被動變主動,補在刀口上 |
+| 4 | **AP description 寫人話**(kb.config.yaml) | 一句話 | 治「問題送錯系統」——路由錯了檢索再準也沒用 |
+
+補完 glossary/註解後跑 `scripts/index_all.py` 生效(glossary 變更自動觸發
+該 AP 全量重建)。**不建議**:為檢索大規模 rename 舊程式碼(一條 glossary
+同效果、零風險)、把公式抄進 glossary(會過期;公式永遠以程式碼為準)。
 
 ## 接入你的 AP 要做什麼
 
@@ -90,7 +156,9 @@ sequenceDiagram
 
 `app` 參數:單一 AP 時可省略;`lookup_term` / `search_code` 可帶 `"all"` 做
 跨 AP 探索(discovery:分組、每 AP 2 筆位置、只走 semantic;確認歸屬後切回
-單一 app 深查)。
+單一 app 深查)。`search_code(app="all")` 只涵蓋有語意索引的 AP(`engine: semantic`,
+或 `auto` 且已建索引);純 grep 的 AP 會被略過,靠 `list_apps` 描述路由即可
+(見 SPEC §4.9)。`lookup_term(app="all")` 只用 glossary,不受影響。
 
 ## 專案結構
 
@@ -113,13 +181,15 @@ scripts/               維運腳本
   log_report.py        log 彙整報表(用量/歧義訊號統計/glossary 補詞候選)
   extract_glossary.py  對照表骨架萃取(--app)
   eval_retrieval.py    embedding 模型評測(eval/ 題庫;排序與語料同 production)
+  fleet_eval.py        引擎決策實驗 Tier1+2(逐 AP 規模/延遲/分歧/命名 → 建議 grep|semantic)
+  eval_ablation.py     引擎決策實驗 Tier3(逐 AP grep vs semantic 命中率;需標註題庫)
   script_args.py       scripts 共用的 --flag 參數解析
   setup.ps1            venv + 依賴 + .mcp.json 範本 + selftest
   make_template.ps1    產出通用模板(nl-query-kb-template/;code 只在這裡維護)
 tests/                 selftest.py(功能驗證)、selftest_multiapp.py(multi-AP 隔離)、
                        unit/(pytest 單元測試,無外部依賴,coverage 81%)
 config/                kb.config.yaml + glossary/<app>.yaml(團隊資產,進版控)
-eval/                  題庫、驗收基準、fixture app
+eval/                  題庫、驗收基準、fixture app、FLEET-EVAL 協定與 ablation 報告
 docs/                  SPEC / QUICKSTART / PLAN / TODO / ENTERPRISE-GAP
 ```
 

@@ -62,23 +62,29 @@ flowchart LR
 flowchart TB
     claude["Claude(入口)"]
 
-    subgraph kbsys["NL Query KB 系統(一隊一台)"]
-        server["kb server
-        Python・MCP・7 個唯讀 tools
-        kb.config.yaml 列 N 個 AP
-        tools 帶 app 參數路由"]
-        subgraph stores["預建索引(離線建置,查詢期唯讀;每 AP 一組)"]
+    subgraph kbsys["NL Query KB 系統(一隊一台,同一台伺服器)"]
+        subgraph online["線上:查詢服務(常駐 process,kb_server.py)"]
+            server["kb server
+            Python・MCP・7 個唯讀 tools
+            kb.config.yaml 列 N 個 AP
+            tools 帶 app 參數路由"]
+        end
+
+        subgraph stores["索引檔案(兩個 process 的唯一介面;每 AP 一組)"]
             vec[("向量索引 .semantic/<app>/")]
             cg[("codegraph.db × N(SQLite)")]
         end
+
+        subgraph offline["離線:索引 pipeline(獨立批次 process,index_all.py,掛排程)"]
+            pipe["git pull → codegraph sync → semantic_index
+            → glossary lint;content-hash 增量"]
+        end
+
         gloss[("glossary/<app>.yaml
         zh 業務詞 ↔ IT 命名")]
-        pipe["索引 pipeline(離線,掛排程)
-        git pull → codegraph → semantic_index
-        → glossary lint;content-hash 增量"]
     end
 
-    subgraph apside["N 個 AP 資產(唯讀,即時讀現值)"]
+    subgraph apside["N 個 AP 資產(唯讀)"]
         code[("原始碼 .java / .ts")]
         yml[("application*.yml")]
         db[("DB 設定表
@@ -86,18 +92,23 @@ flowchart TB
     end
 
     claude -->|"MCP"| server
-    server --> vec
-    server --> cg
+    server -->|"唯讀(mtime 熱載)"| vec
+    server -->|"唯讀"| cg
     server --> gloss
     server -->|"即時讀(不經索引)"| code
     server --> yml
     server --> db
-    code --> pipe
-    pipe --> vec
-    pipe --> cg
+
+    pipe -->|"寫入(原子換檔)"| vec
+    pipe -->|"寫入"| cg
+    pipe -->|"掃描原始碼"| code
     gloss -.->|"業務詞反向注入"| pipe
 ```
 
+- **server 與 pipeline 互相獨立**:兩個 process、零呼叫關係,唯一介面是索引
+  檔案——pipeline 寫入(tmp + 原子換名),server 以 mtime 偵測熱載(重建後
+  不需重啟)。pipeline 掛掉只影響索引新鮮度,服務不中斷;索引未就緒時
+  `engine: auto` 自動墊檔 grep。
 - 查詢期只做 ANN + SQLite lookup + 即時讀現值,延遲與 repo 行數脫鉤。
 - config tools 與 read_source 即時讀現值/原文,無 staleness。
 
@@ -109,10 +120,10 @@ flowchart LR
         la["list_apps"]
         g["glossary.py
         → lookup_term"]
-        ss["semantic_search.py
-        → search_code(正式引擎)"]
         cs["code_search.py
-        → search_code(auto 墊檔)"]
+        → search_code(預設引擎)"]
+        ss["semantic_search.py
+        → search_code(選配:engine=semantic)"]
         gd["graph_db.py
         → get_structure"]
         rs["read_source"]
@@ -170,9 +181,19 @@ flowchart LR
 - **增量**:codegraph content-hash 判斷變更檔;glossary 或 model 變更自動全量。
 - **混合排序**:ANN 相似度 + 字面 boost 按命中詞數累計
   (親打詞每詞 +0.08 封頂 0.24、glossary 展開詞每詞 +0.04 封頂 0.20)。
+- **預設引擎 = grep(2026-07-09 起,依 ablation 定案)**:實測顯示
+  **當 code 命名尚可、又有維護 glossary 時,語意索引相對 grep+glossary 幾乎零檢索增益**
+  ——besthouse 10 題、top-3、同 glossary:zh+en semantic 18/20 vs grep 17/20,
+  且該 1 題差異落在非 code 題(datasource,正解本應走 get_app_config)。原因:grep 引擎
+  本身已做「英文 identifier + 中文 bigram 註解 + glossary 展開」三合一,涵蓋多數場景;
+  且查詢前 Claude 已把口語歸一化為 zh+en、並經 lookup_term 展開成 IT 詞。
+  完整數據見 `eval/ABLATION.md`。
+- **semantic 保留為選配加速器**,判準三選一:(a) repo 大到查詢期 grep 全掃描會慢
+  (現行 grep 為逐檔即時解析,大型 repo 才成瓶頸);(b) 命名極差且 glossary 補不動
+  (純換句話說、零共同 token 的匹配只有 embedding 做得到);(c) 需要 `app="all"`
+  跨 AP 探索(§4.9 目前只走 semantic,未建索引的 AP 會被略過)。
 - **引擎依賴鏈(單向)**:codegraph 建圖 → 語意索引 → semantic 引擎。
-  `engine: auto` 下索引未就緒/損壞時自動墊檔 grep(讀當下磁碟、零索引),
-  就緒後自動切回。手動鎖 grep 僅適合不維護索引的丟棄式小 AP。
+  `engine: auto` 下索引未就緒/損壞時自動墊檔 grep(讀當下磁碟、零索引),就緒後自動切回。
 
 ### 4.3 get_structure
 
@@ -273,8 +294,8 @@ apps:
       driver: mariadb          # mariadb | oracle(oracle 未實測)
       table_whitelist: [YOUR_CONFIG_TABLE]
       sensitive_tables: {MEMBER: 含個資,排除}
-engine: auto                   # app 區塊可覆蓋
-embed_model: ""                # 空 = e5-large
+engine: grep                   # 預設 grep(app 區塊可覆蓋);semantic | auto 為選配,見 §4.2
+embed_model: ""                # 僅 semantic / auto 用;空 = e5-large
 ```
 
 編輯即時生效(mtime 快取),不需重啟 server;**例外:新增/移除 AP 需重啟**
@@ -322,6 +343,12 @@ server 端實作三種歧義訊號(S1~S3);S4 **不是 server 功能**——是 i
 - **誤觸發控制**:S2 門檻(Δ、模組數)以 eval 清晰題調校——寧可少問,不可煩人。
 
 ### 4.9 跨 AP 聯合查詢(Phase 11,已實作 2026-07-06)
+
+> **依賴語意索引,預設關閉(2026-07-09)**:`search_code(app="all")` 只走 semantic
+> 引擎(見下),而預設引擎已改為 grep(§4.2),故未對任一 AP 開 `engine: semantic/auto`
+> 時,discovery 會把每個 AP 標為「略過(索引未就緒)」——等於停用。AP 數少、`list_apps`
+> 描述清楚時,靠描述路由即足夠;AP 多到描述難以路由,再對欲納入 discovery 的 AP 開
+> semantic。`lookup_term(app="all")` 只用 glossary,不受此限,照常可用。
 
 **動機**:使用者不知道功能屬於哪個系統(「哪個系統會產生條碼?」),
 `list_apps` 的一句話描述不足以路由時,現況只能逐一猜。

@@ -1,4 +1,5 @@
 # 開發/測試依賴(模板與正式部署不需要)
 -r requirements.txt
+-r requirements-semantic.txt   # 單元測試涵蓋 semantic 模組,需 numpy/fastembed
 pytest
 pytest-cov
