@@ -57,10 +57,6 @@ def _pct(values: list[float], q: float) -> float:
     return s[lo] + (s[hi] - s[lo]) * (k - lo)
 
 
-def _file_lines_cache() -> dict:
-    return {}
-
-
 def loc_and_symbols(app) -> tuple[int, list[graph_db.Symbol]]:
     """LOC(search_dirs 內原始碼行數)與可索引 symbol(過 search_dirs)。"""
     loc = 0

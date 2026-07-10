@@ -53,15 +53,18 @@ def health_payload() -> dict:
         config = kb_config.load_config()
     except ValueError as exc:
         return {"status": "config-error", "detail": str(exc)}
-    from semantic_common import index_paths
+    try:
+        from semantic_common import index_paths
+    except ImportError:  # 純 grep 部署(未裝 requirements-semantic):無語意索引可回報
+        index_paths = None
     apps = []
     for app in config.apps:
-        paths = index_paths(app)
+        paths = index_paths(app) if index_paths else None
         entry = {
             "name": app.name,
             "repo": app.repo_root.is_dir(),
             "codegraph": graph_db.available(app),
-            "semantic": paths.all_exist(),
+            "semantic": bool(paths and paths.all_exist()),
             "built_at": None,
         }
         if entry["semantic"]:

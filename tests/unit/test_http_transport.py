@@ -88,6 +88,14 @@ class TestHealthPayload:
         assert app["codegraph"] is False    # fixture 沒建圖
         assert app["semantic"] is False
 
+    def test_ok_without_semantic_packages(self, demo_config, monkeypatch):
+        """純 grep 部署(未裝 requirements-semantic):/health 不得 500。"""
+        import sys
+        monkeypatch.setitem(sys.modules, "semantic_common", None)  # import 觸發 ImportError
+        payload = http_transport.health_payload()
+        assert payload["status"] == "ok"
+        assert payload["apps"][0]["semantic"] is False
+
     def test_config_error_reported(self, tmp_path, monkeypatch):
         monkeypatch.setattr(kb_config, "CONFIG_PATH", tmp_path / "nope.yaml")
         kb_config._cache["stamp"] = None
