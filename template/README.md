@@ -23,6 +23,11 @@ cd <AP repo 根>; codegraph init .                 # 每 AP 建一次圖
 大型 repo / 命名極差 / 要 `app="all"` 探索的 AP 才改 `engine: semantic`
 (需 `pip install -r requirements-semantic.txt`)。
 
+跨團隊轉介(選配):使用者常會問到「不歸你這台管」的系統。在 `kb.config.yaml`
+加 `fleet:` 目錄(見 kb.config.yaml.example)列出其他團隊的系統與窗口,
+Claude 就會引導使用者連對方的 Rosetta 續問,或至少給負責團隊/文件連結——
+對方團隊不需要先裝 Rosetta 就能列進目錄。
+
 ## 檔案
 
 | 檔案 | 用途 |

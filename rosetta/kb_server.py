@@ -28,8 +28,9 @@ import kb_log
 log = kb_log.setup()
 
 # 設定壞掉時 fail fast,錯誤訊息進 MCP log。
-# 注意:instructions 內的 AP 清單在這裡烘進字串,新增/移除 AP 後需重啟 server
-# (tools 本身每次呼叫都重讀設定,編輯白名單/路徑等仍即時生效)。
+# 注意:instructions 內的 AP 清單與 fleet 轉介規則在這裡烘進字串,
+# 新增/移除 AP 或 fleet 區段後需重啟 server
+# (tools 本身每次呼叫都重讀設定,編輯白名單/路徑/fleet 條目內容等仍即時生效)。
 _config = kb_config.load_config()
 log.info("設定載入:%d 個 AP(%s)", len(_config.apps), ", ".join(_config.app_names()))
 
@@ -57,6 +58,14 @@ _INSTRUCTIONS = f"""本 server 是唯讀的「系統邏輯知識庫」,服務多
        (如同名房屋)——以識別欄位(ID/名稱/樓層/價格等)列選項請使用者確認是哪一筆,
        不要自行挑一筆作答。
    選項一律取自工具回傳的真實候選,最多問一次、1~2 個問題;問題清楚時不反問。"""
+
+# fleet 轉介規則(SPEC §4.10):設定了 fleet 目錄才加進 instructions
+if _config.fleet:
+    _INSTRUCTIONS += """
+8. 問題不屬於上述任何 AP 時不要硬答:先看 list_apps 的「其他團隊的系統」轉介區段,
+   描述吻合就引導使用者到該系統的正確窗口——有 Rosetta server 的附 server 名稱與
+   連線方式,沒有的給負責團隊/文件連結;都不吻合就明說查不到。
+   轉介只給指引,不代答其他團隊系統的內容。"""
 
 mcp = FastMCP(
     _config.server_name,
@@ -123,9 +132,68 @@ def _tool(fn):
     return logged
 
 
+def _fleet_referral(entry: kb_config.FleetEntry) -> str:
+    """單一 fleet 條目的轉介指引:有 Rosetta 的給連線方式,沒有的給聯絡窗口。"""
+    parts = []
+    if entry.server:
+        target = f"請使用者連「{entry.server}」server 續問"
+        if entry.endpoint:
+            target += f"(連線:{entry.endpoint})"
+        parts.append(target)
+    else:
+        parts.append("該系統尚無 Rosetta server")
+    parts.append(f"負責:{entry.team}")
+    if entry.docs:
+        parts.append(f"文件:{entry.docs}")
+    return ";".join(parts)
+
+
+def _fleet_section(config: kb_config.KbConfig) -> str:
+    """list_apps 的跨團隊轉介區段(SPEC §4.10);未設定 fleet 時回空字串。"""
+    if not config.fleet:
+        return ""
+    lines = ["", "", "其他團隊的系統(本 server 不管理,僅供轉介——"
+                   "使用者問到時依以下資訊引導,不代答內容):"]
+    for entry in config.fleet:
+        for fleet_app in entry.apps:
+            lines.append(f"- {fleet_app.name}:{fleet_app.description}"
+                         f"(→ {_fleet_referral(entry)})")
+    return "\n".join(lines)
+
+
+def _fleet_hint(query: str) -> str:
+    """檢索空手時的跨團隊轉介訊號(SPEC §4.10)。
+
+    比對 fleet app 的 name 與 keywords(子字串、不分大小寫);description
+    是給 Claude 在 list_apps 讀的路由依據,不參與字面比對。
+    """
+    config = kb_config.load_config()
+    if not config.fleet:
+        return ""
+    normalized = (query or "").lower()
+    matched = [
+        (entry, fleet_app)
+        for entry in config.fleet
+        for fleet_app in entry.apps
+        if any(needle and needle.lower() in normalized
+               for needle in (fleet_app.name, *fleet_app.keywords))
+    ]
+    if not matched:
+        return ("\n(另:此問題若屬於其他團隊的系統,見 list_apps 的"
+                "「其他團隊的系統」區段,依該區段引導使用者。)")
+    log.info("跨團隊轉介訊號 query=%s 命中 %d 個 fleet app",
+             kb_log.brief(query), len(matched))
+    lines = ["\n(轉介訊號:問題詞彙吻合其他團隊的系統,本 server 不管理——"
+             "請依以下資訊引導使用者:)"]
+    lines += [f"- {fleet_app.name}({fleet_app.description}):{_fleet_referral(entry)}"
+              for entry, fleet_app in matched[:3]]
+    return "\n".join(lines)
+
+
 @_tool
 def list_apps() -> str:
-    """列出本 server 管理的所有 AP(系統)與描述。
+    """列出本 server 管理的所有 AP(系統)與描述;若設定了跨團隊轉介目錄,
+    另列「其他團隊的系統」與各自的轉介窗口。
 
     不確定使用者的問題屬於哪個系統時先呼叫本工具,再帶正確的 app 參數查詢。
     """
@@ -146,7 +214,8 @@ def list_apps() -> str:
                 pass
         suffix = f"({'; '.join(status)})" if status else ""
         lines.append(f"- {app.name}:{app.description}{suffix}")
-    return f"共 {len(config.apps)} 個 AP:\n" + "\n".join(lines)
+    return (f"共 {len(config.apps)} 個 AP:\n" + "\n".join(lines)
+            + _fleet_section(config))
 
 
 def _independent_concepts(query: str, matched: list) -> list:
@@ -184,7 +253,8 @@ def _lookup_term_all(query: str) -> str:
     log.info("discovery lookup_term all query=%s 命中 %d AP", kb_log.brief(query), len(parts))
     if not parts:
         return ("所有 AP 的 glossary 都沒有符合的條目。"
-                "可改用 search_code(app=\"all\")做跨 AP 語意探索。")
+                "可改用 search_code(app=\"all\")做跨 AP 語意探索。"
+                + _fleet_hint(query))
     return ("(discovery 模式:確認歸屬後請切回單一 app 深查。)\n\n"
             + "\n\n".join(parts))
 
@@ -208,7 +278,8 @@ def lookup_term(query: str, app: str = "") -> str:
     matched = glossary.match_entries(query, entries)
     if not matched:
         all_terms = "、".join(e.term for e in entries)
-        return f"沒有符合「{query}」的對照條目。已收錄的業務用語:{all_terms}"
+        return (f"沒有符合「{query}」的對照條目。已收錄的業務用語:{all_terms}"
+                + _fleet_hint(query))
     hint = ""
     concepts = _independent_concepts(query, matched)
     if len(concepts) >= 2:
@@ -320,7 +391,7 @@ def _search_semantic(query: str, top_k: int, extra_terms, matched_entries,
         log.info("S3 檢索空手 app=%s engine=semantic query=%s",
                  ctx.name, kb_log.brief(query))
         return ("語意索引無足夠相關的結果。可先用 lookup_term 確認業務用語,"
-                "或以 IT 詞重查。" + _glossary_domain_hint(ctx))
+                "或以 IT 詞重查。" + _glossary_domain_hint(ctx) + _fleet_hint(query))
     log.info("search app=%s engine=semantic hits=%d top=%s(%.3f)",
              ctx.name, len(hits), hits[0].qualified_name, hits[0].score)
     parts = [f"(app={ctx.name},engine=semantic,{semantic_search.index_info(ctx)})"]
@@ -346,7 +417,7 @@ def _search_grep(query: str, top_k: int, extra_terms, matched_entries,
     if not results:
         log.info("S3 檢索空手 app=%s engine=grep query=%s", ctx.name, kb_log.brief(query))
         return ("找不到相關程式碼。可先用 lookup_term 確認業務用語的 IT 對照,"
-                "再以 IT 詞重查。" + _glossary_domain_hint(ctx))
+                "再以 IT 詞重查。" + _glossary_domain_hint(ctx) + _fleet_hint(query))
     log.info("search app=%s engine=grep(墊檔)hits=%d", ctx.name, len(results))
     parts = [f"(app={ctx.name},engine=grep,全掃描 fallback)"]
     if matched_entries:
@@ -370,6 +441,7 @@ def _search_all_apps(query: str) -> str:
         return "跨 AP 探索需要語意引擎(fastembed 未安裝);請改逐一指定 app 查詢。"
     config = kb_config.load_config()
     vec_cache: dict[str, object] = {}
+    hit_any = False
     parts = ["(discovery 模式:每 AP 最多 2 筆、只走語意索引、不含程式碼內文。"
              "確認歸屬後請切回單一 app 深查;不同 AP 的來源不可混用。)"]
     for ctx in config.apps:
@@ -393,13 +465,14 @@ def _search_all_apps(query: str) -> str:
         if not hits:
             parts.append(f"## {ctx.name}:無足夠相關的結果")
             continue
+        hit_any = True
         lines = [f"## {ctx.name}({ctx.description})"]
         lines += [f"- {h.file_path}:{h.start_line}-{h.end_line} — "
                   f"{h.qualified_name}({h.kind},score={h.score})" for h in hits]
         parts.append("\n".join(lines))
     log.info("discovery search_code all query=%s(%d AP,%d 種 model)",
              kb_log.brief(query), len(config.apps), len(vec_cache))
-    return "\n\n".join(parts)
+    return "\n\n".join(parts) + ("" if hit_any else _fleet_hint(query))
 
 
 @_tool

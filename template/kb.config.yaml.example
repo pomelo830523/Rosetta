@@ -25,6 +25,30 @@ apps:
 
   # 第二個以上的 AP 依樣新增區塊;tool 數量固定 7 個,不隨 AP 數成長
 
+# 跨團隊轉介目錄(選填,SPEC §4.10):使用者問到「不歸本 server 管」的系統時,
+# Claude 依此引導到正確的窗口,而不是回「查無結果」或硬答。
+# 對方團隊「不需要」先裝 Rosetta 才能列進來:
+#   - 有 server/endpoint 的條目 → 引導使用者連對方的 Rosetta 續問
+#   - 沒有的 → 至少給負責團隊/文件連結(純轉介)
+# description 給 Claude 在 list_apps 做路由;keywords 用於檢索空手時的字面比對轉介
+# (建議放使用者會說出口的業務詞)。新增/移除 fleet 區段需重啟 server(instructions
+# 的轉介規則於啟動時組定;條目內容的修改即時生效)。
+#fleet:
+#  - server: rosetta-logistics            # 對方 Rosetta 的 server 名稱
+#    team: 物流組(聯絡人:王小明)          # 必填:轉介至少要能告訴使用者找誰
+#    endpoint: http://10.x.x.x:8600/mcp   # 對方 MCP 連線端點或安裝說明(選填)
+#    docs: http://wiki.internal/logistics # 文件/wiki 連結(選填)
+#    apps:
+#      - name: shipping
+#        description: 出貨排程系統——揀貨、派車與運費計算
+#        keywords: [出貨, 派車, 託運]
+#  - team: 帳務組(聯絡人:李小華)          # 無 Rosetta 的系統:純轉介
+#    docs: http://wiki.internal/billing
+#    apps:
+#      - name: billing
+#        description: 請款對帳系統——月結、發票與沖帳
+#        keywords: [請款, 對帳, 發票]
+
 # 全域預設(app 區塊可覆蓋)
 engine: grep          # 預設 grep:命名尚可 + 有維護 glossary 時,語意索引相對 grep
                       # 幾乎零增益(見 SPEC §4.2、eval/ABLATION.md),且免裝 embedding 套件。

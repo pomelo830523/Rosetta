@@ -53,6 +53,66 @@ class TestLookupTerm:
         assert "search_code" in out
 
 
+_FLEET_YAML = """
+fleet:
+  - server: rosetta-logistics
+    team: 物流組(聯絡人:小王)
+    endpoint: http://10.0.0.1:8600/mcp
+    apps:
+      - name: wms
+        description: 倉儲管理系統——庫存與出貨
+        keywords: [庫存, 出貨]
+  - team: 帳務組(聯絡人:小李)
+    docs: http://wiki/billing
+    apps:
+      - name: billing
+        description: 請款對帳系統
+        keywords: [請款, 對帳]
+"""
+
+
+@pytest.fixture
+def fleet_config(demo_config):
+    """在 demo 設定上追加 fleet 轉介目錄。"""
+    import kb_config
+    demo_config.write_text(
+        demo_config.read_text(encoding="utf-8") + _FLEET_YAML, encoding="utf-8")
+    kb_config._cache["stamp"] = None
+    return demo_config
+
+
+class TestFleetReferral:
+    def test_list_apps_shows_fleet_section(self, fleet_config):
+        out = kb_server.list_apps()
+        assert "其他團隊的系統" in out
+        assert "wms" in out and "rosetta-logistics" in out
+        assert "http://10.0.0.1:8600/mcp" in out
+
+    def test_list_apps_without_fleet_has_no_section(self):
+        assert "其他團隊的系統" not in kb_server.list_apps()
+
+    def test_entry_without_server_gives_contact(self, fleet_config):
+        out = kb_server.list_apps()
+        assert "尚無 Rosetta server" in out
+        assert "帳務組" in out and "http://wiki/billing" in out
+
+    def test_lookup_miss_with_keyword_returns_referral(self, fleet_config):
+        out = kb_server.lookup_term("請款單怎麼開", app="demo")
+        assert "轉介訊號" in out and "帳務組" in out
+
+    def test_search_miss_with_keyword_returns_referral(self, fleet_config):
+        out = kb_server.search_code("倉庫的庫存夠不夠", app="demo")
+        assert "轉介訊號" in out and "rosetta-logistics" in out
+
+    def test_miss_without_keyword_points_to_list_apps(self, fleet_config):
+        out = kb_server.search_code("魔法蘑菇咒語", app="demo")
+        assert "轉介訊號" not in out and "其他團隊的系統" in out
+
+    def test_no_fleet_no_hint_on_miss(self):
+        out = kb_server.search_code("魔法蘑菇咒語", app="demo")
+        assert "其他團隊" not in out
+
+
 class TestSearchCode:
     def test_grep_hit_fixture(self):
         out = kb_server.search_code("運費怎麼算", app="demo")

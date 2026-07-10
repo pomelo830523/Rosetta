@@ -60,9 +60,27 @@ class AppContext:
 
 
 @dataclass(frozen=True)
+class FleetApp:
+    """艦隊目錄中「別的團隊管理的系統」(SPEC §4.10:本 server 只轉介,不查詢)。"""
+    name: str
+    description: str            # Claude 轉介路由的依據(list_apps 轉介區段)
+    keywords: tuple[str, ...]   # 檢索空手時的字面比對轉介用
+
+
+@dataclass(frozen=True)
+class FleetEntry:
+    server: str    # 對方 Rosetta 的 server 名稱;空字串 = 該團隊尚無 Rosetta
+    team: str      # 負責團隊與聯絡窗口(必填:轉介至少要能告訴使用者找誰)
+    endpoint: str  # 對方 MCP 連線端點或安裝說明(選填)
+    docs: str      # 系統文件/wiki 連結(選填)
+    apps: tuple[FleetApp, ...]
+
+
+@dataclass(frozen=True)
 class KbConfig:
     server_name: str
     apps: tuple[AppContext, ...]
+    fleet: tuple[FleetEntry, ...] = ()
 
     def app_names(self) -> tuple[str, ...]:
         return tuple(a.name for a in self.apps)
@@ -102,6 +120,9 @@ def _parse_db(raw: dict, app_name: str) -> DbSettings:
 
 
 def _parse_app(raw: dict, defaults: dict) -> AppContext:
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"kb.config.yaml 的 apps 清單有非 mapping 項目:{raw!r}(檢查 YAML 縮排)。")
     name = str(raw.get("name") or "").strip()
     if not name:
         raise ValueError("kb.config.yaml 有 app 區塊缺少 name。")
@@ -130,6 +151,62 @@ def _parse_app(raw: dict, defaults: dict) -> AppContext:
     )
 
 
+def _parse_fleet_app(raw: dict, team: str, local_names: set[str]) -> FleetApp:
+    if not isinstance(raw, dict):
+        raise ValueError(
+            f"fleet 區塊「{team}」的 apps 有非 mapping 項目:{raw!r}(檢查 YAML 縮排)。")
+    name = str(raw.get("name") or "").strip()
+    if not name:
+        raise ValueError(f"fleet 區塊「{team}」有 app 缺少 name。")
+    if name.lower() in local_names:
+        raise ValueError(
+            f"fleet app「{name}」與本 server 管理的 app 同名;"
+            "fleet 只放其他團隊的系統,請改名或移除。")
+    description = str(raw.get("description") or "").strip()
+    if not description:
+        raise ValueError(f"fleet app「{name}」缺少 description(Claude 轉介路由的依據)。")
+    return FleetApp(
+        name=name,
+        description=description,
+        keywords=tuple(str(k) for k in (raw.get("keywords") or [])),
+    )
+
+
+def _parse_fleet(data: dict, local_names: set[str]) -> tuple[FleetEntry, ...]:
+    """fleet 轉介目錄(選填,SPEC §4.10):其他團隊的系統,只轉介不查詢。"""
+    raw_list = data.get("fleet")
+    if raw_list is None:
+        return ()
+    if not isinstance(raw_list, list):
+        raise ValueError("kb.config.yaml 的 fleet 需要是清單。")
+    entries = []
+    for raw in raw_list:
+        raw = raw or {}
+        if not isinstance(raw, dict):
+            raise ValueError(f"fleet 清單有非 mapping 項目:{raw!r}(檢查 YAML 縮排)。")
+        team = str(raw.get("team") or "").strip()
+        if not team:
+            raise ValueError("fleet 有區塊缺少 team(轉介至少要能告訴使用者找誰)。")
+        apps = tuple(_parse_fleet_app(a or {}, team, local_names)
+                     for a in (raw.get("apps") or []))
+        if not apps:
+            raise ValueError(f"fleet 區塊「{team}」缺少 apps 清單。")
+        entries.append(FleetEntry(
+            server=str(raw.get("server") or "").strip(),
+            team=team,
+            endpoint=str(raw.get("endpoint") or "").strip(),
+            docs=str(raw.get("docs") or "").strip(),
+            apps=apps,
+        ))
+    fleet_names = [fa.name.lower() for e in entries for fa in e.apps]
+    duplicated = {n for n in fleet_names if fleet_names.count(n) > 1}
+    if duplicated:
+        raise ValueError(
+            f"fleet 有重複的 app name:{', '.join(sorted(duplicated))}"
+            "(同一系統只登記一個負責團隊,轉介才不會混淆)。")
+    return tuple(entries)
+
+
 def _parse(text: str) -> KbConfig:
     data = yaml.safe_load(text) or {}
     if not isinstance(data, dict) or not isinstance(data.get("apps"), list):
@@ -148,6 +225,7 @@ def _parse(text: str) -> KbConfig:
     return KbConfig(
         server_name=str(data.get("server_name") or "nl-query-kb"),
         apps=apps,
+        fleet=_parse_fleet(data, set(names)),
     )
 
 

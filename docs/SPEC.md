@@ -296,6 +296,7 @@ apps:
       sensitive_tables: {MEMBER: 含個資,排除}
 engine: grep                   # 預設 grep(app 區塊可覆蓋);semantic | auto 為選配,見 §4.2
 embed_model: ""                # 僅 semantic / auto 用;空 = e5-large
+fleet: []                      # 選填:跨團隊轉介目錄,見 §4.10
 ```
 
 編輯即時生效(mtime 快取),不需重啟 server;**例外:新增/移除 AP 需重啟**
@@ -365,6 +366,40 @@ server 端實作三種歧義訊號(S1~S3);S4 **不是 server 功能**——是 i
   回答不得混用不同 AP 的來源而不標明 app 名。
 - `query_db_config` / `get_app_config` / `read_source` / `get_structure`
   **不開放 `all`**:現值與檔案存取必須明確指定系統。
+
+### 4.10 跨團隊轉介(fleet 目錄,2026-07-10)
+
+**動機**:使用者常問到「不歸本 server 管」的系統(關聯系統極多,且部分團隊
+不會裝 Rosetta)。MCP 協定沒有 server 間轉接機制,server 能做的是回傳
+「這屬於誰、去哪問」的指引,由 Claude 引導使用者。
+
+**設計**:`kb.config.yaml` 選填 `fleet:` 目錄——每條目 = 一個其他團隊,
+`team` 必填(至少能告訴使用者找誰),`server`/`endpoint`/`docs` 選填,
+`apps` 列該團隊的系統(`name` + `description` 必填、`keywords` 選填)。
+**對方不需要裝 Rosetta 就能列進目錄**:有 endpoint 的引導使用者連對方
+Rosetta 續問(雙方都有 Rosetta 時的無縫路徑);沒有的給聯絡窗口/文件
+(純轉介),提供漸進採用路徑——對方日後裝了 Rosetta,補 endpoint 即可。
+
+三個掛載點(不加新 tool,tool 總數維持 7):
+
+- **`list_apps`** 尾端附「其他團隊的系統」區段:Claude 路由時本來就先看
+  這個 tool,描述吻合即轉介。
+- **檢索空手時**(`lookup_term` 無命中、`search_code` 無結果、all 模式全空):
+  問題詞彙與 fleet 條目的 `name`/`keywords` 字面吻合(子字串、不分大小寫)
+  時附「轉介訊號」與該條目的指引(最多 3 筆);不吻合時附一句話指向
+  list_apps 的轉介區段。`description` 只給 Claude 路由,不參與字面比對。
+- **instructions #8**(設定了 fleet 才加):不歸本 server 管的問題不硬答,
+  依轉介區段引導;轉介只給指引,不代答其他團隊系統的內容。
+
+**防護欄**:fleet app 與本機 app 同名時載入 fail fast;fleet 條目只產生
+轉介文字,不觸發任何檢索/檔案/DB 存取。目錄由本團隊維護(建議放共用
+git repo,各團隊自己 PR 自己的區段);新增/移除 fleet 需重啟 server
+(instructions 於啟動時組定),條目內容修改即時生效(mtime 快取)。
+
+**設計取捨**:曾考慮中央 router/gateway MCP(單一入口代轉查詢)——
+多一個要維運的服務、單點故障、且代轉等於穿透各團隊的資料邊界,
+以「一隊一台」定位不採;純 client 端多連線(使用者自己連多台 Rosetta)
+只對已連線者有效,無法涵蓋「還沒連/對方沒裝」的情境,列為輔助路徑。
 
 ## 5. 驗收標準
 

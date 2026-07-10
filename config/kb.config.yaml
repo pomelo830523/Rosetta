@@ -48,6 +48,10 @@ apps:
     glossary: glossary/zplviewer.yaml
     # 無 DB,query_db_config 不開放任何表
 
+# 跨團隊轉介目錄(選填,SPEC §4.10):列出其他團隊的系統與窗口,檢索空手/路由不到時
+# Claude 依此轉介,而不是硬答。寫法見 template/kb.config.yaml.example 的 fleet 區段。
+# 本站(母站)目前無下游團隊,故未設定。
+
 # 全域預設(app 區塊可覆蓋)
 # 預設 grep:ablation(eval/ABLATION.md)實測——當 code 命名尚可、又有維護 glossary 時,
 # 語意索引相對 grep+glossary 幾乎零檢索增益(besthouse zh+en 18/20 vs 17/20,且差異落在非 code 題)。

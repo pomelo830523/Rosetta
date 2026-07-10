@@ -32,6 +32,7 @@ class TestParse:
         ("apps:\n  - name: all\n    repo_root: x\n", "保留字"),
         ("apps:\n  - name: a\n", "缺少 repo_root"),
         ("apps:\n  - name: a\n    repo_root: x\n    engine: bad\n", "engine"),
+        ("apps:\n  - 純字串項目\n", "非 mapping"),
     ])
     def test_invalid_configs_raise(self, text, message):
         with pytest.raises(ValueError, match=message):
@@ -56,6 +57,63 @@ class TestParse:
     def test_bad_driver_raises(self):
         text = "apps:\n  - name: a\n    repo_root: x\n    db: {driver: mssql}\n"
         with pytest.raises(ValueError, match="driver"):
+            kb_config._parse(text)
+
+
+_FLEET = _MINIMAL + """\
+fleet:
+  - server: rosetta-logistics
+    team: 物流組(聯絡人:小王)
+    endpoint: http://10.0.0.1:8600/mcp
+    docs: http://wiki/logistics
+    apps:
+      - name: shipping
+        description: 出貨排程系統
+        keywords: [出貨, 派車]
+  - team: 帳務組
+    apps:
+      - name: billing
+        description: 請款對帳系統
+"""
+
+
+class TestFleet:
+    def test_no_fleet_section_defaults_empty(self):
+        assert kb_config._parse(_MINIMAL).fleet == ()
+
+    def test_full_entry_parsed(self):
+        entry = kb_config._parse(_FLEET).fleet[0]
+        assert entry.server == "rosetta-logistics"
+        assert entry.team == "物流組(聯絡人:小王)"
+        assert entry.endpoint == "http://10.0.0.1:8600/mcp"
+        assert entry.docs == "http://wiki/logistics"
+        assert entry.apps[0].name == "shipping"
+        assert entry.apps[0].keywords == ("出貨", "派車")
+
+    def test_optional_fields_default_empty(self):
+        entry = kb_config._parse(_FLEET).fleet[1]
+        assert entry.server == "" and entry.endpoint == "" and entry.docs == ""
+        assert entry.apps[0].keywords == ()
+
+    @pytest.mark.parametrize("fleet_yaml, message", [
+        ("fleet: {bad: mapping}\n", "需要是清單"),
+        ("fleet:\n  - apps:\n      - name: x\n        description: y\n", "缺少 team"),
+        ("fleet:\n  - team: 甲組\n", "缺少 apps"),
+        ("fleet:\n  - team: 甲組\n    apps:\n      - description: y\n", "缺少 name"),
+        ("fleet:\n  - team: 甲組\n    apps:\n      - name: x\n", "缺少 description"),
+        ("fleet:\n  - 純字串項目\n", "非 mapping"),
+        ("fleet:\n  - team: 甲組\n    apps: [純字串]\n", "非 mapping"),
+        ("fleet:\n  - team: 甲組\n    apps:\n      - name: dup\n        description: 甲\n"
+         "  - team: 乙組\n    apps:\n      - name: DUP\n        description: 乙\n", "重複"),
+    ])
+    def test_invalid_fleet_raises(self, fleet_yaml, message):
+        with pytest.raises(ValueError, match=message):
+            kb_config._parse(_MINIMAL + fleet_yaml)
+
+    def test_fleet_app_colliding_with_local_app_raises(self):
+        text = (_MINIMAL + "fleet:\n  - team: 甲組\n    apps:\n"
+                "      - name: ALPHA\n        description: 撞名\n")
+        with pytest.raises(ValueError, match="同名"):
             kb_config._parse(text)
 
 
