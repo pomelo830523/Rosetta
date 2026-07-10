@@ -71,7 +71,8 @@ def to_yaml(items: list[dict]) -> str:
         "",
     ]
     for item in items:
-        lines.append(f"- term: {item['term']}")
+        term = item["term"].replace("'", "''")  # 引號跳脫:term 常含「:」(如「說明:運費」)會炸 YAML
+        lines.append(f"- term: '{term}'")
         lines.append("  aliases: []  # TODO 人工補使用者口語")
         lines.append(f"  it_terms: [{', '.join(item['it_terms'])}]")
         note = item["note"].replace("'", "''")

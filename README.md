@@ -187,7 +187,7 @@ scripts/               維運腳本
   setup.ps1            venv + 依賴 + .mcp.json 範本 + selftest
   make_template.ps1    產出通用模板(nl-query-kb-template/;code 只在這裡維護)
 tests/                 selftest.py(功能驗證)、selftest_multiapp.py(multi-AP 隔離)、
-                       unit/(pytest 單元測試,無外部依賴,coverage 81%)
+                       unit/(pytest 單元測試,無外部依賴,coverage 78%)
 config/                kb.config.yaml + glossary/<app>.yaml(團隊資產,進版控)
 eval/                  題庫、驗收基準、fixture app、FLEET-EVAL 協定與 ablation 報告
 docs/                  SPEC / QUICKSTART / PLAN / TODO / ENTERPRISE-GAP

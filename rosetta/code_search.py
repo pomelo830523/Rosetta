@@ -14,7 +14,7 @@ CONTROL_KEYWORDS = (
     "if", "for", "while", "switch", "catch", "else",
     "try", "do", "return", "new", "synchronized",
 )
-MAX_BODY_CHARS = 6000   # 過大的區塊(整個 class)不回傳
+MAX_BODY_CHARS = 6000   # 只用來丟棄「超大型別宣告」(整個 class body);大方法照收
 MAX_BODY_LINES = 90     # 單一區塊回傳行數上限
 
 _TYPE_DECL_RE = re.compile(r"\b(class|enum|interface|record)\s+\w+")
@@ -63,7 +63,9 @@ def extract_blocks(text: str) -> list[tuple[int, int, str, str]]:
                 is_control = any(signature.startswith(k) for k in CONTROL_KEYWORDS)
                 is_method = "(" in signature and bool(name) and not is_control
                 is_type_decl = _TYPE_DECL_RE.search(signature) is not None
-                if (is_method or is_type_decl) and len(body) <= MAX_BODY_CHARS:
+                # 大方法照收(輸出時 truncate_body 截斷顯示);只有超大「型別宣告」
+                # (整個 class body)才丟棄——那不是有用的檢索單位,要的是它裡面的方法
+                if is_method or (is_type_decl and len(body) <= MAX_BODY_CHARS):
                     blocks.append((start_line, line, signature, body))
             sig_start = idx + 1
         elif ch == ";":
@@ -135,18 +137,41 @@ def truncate_body(body: str) -> str:
     return "\n".join(kept)
 
 
+# 檔案切塊快取:str(path) → (mtime_ns, blocks)。grep 是預設引擎、每次查詢都會走訪
+# 全部檔案,快取避免「檔案沒變卻每次重讀重解析」;以 mtime 失效,故仍永不 drift。
+_block_cache: dict[str, tuple[int, list[tuple[int, int, str, str]]]] = {}
+
+
+def blocks_for(path) -> list[tuple[int, int, str, str]] | None:
+    """讀檔 + 切塊,以 mtime 快取;讀不到回 None。檔案一改動 mtime 就變、快取自動失效。"""
+    key = str(path)
+    try:
+        mtime = path.stat().st_mtime_ns
+    except OSError:
+        _block_cache.pop(key, None)
+        return None
+    cached = _block_cache.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None
+    blocks = (window_blocks(text) if path.suffix.lower() == ".html"
+              else extract_blocks(text))
+    _block_cache[key] = (mtime, blocks)
+    return blocks
+
+
 def search(query: str, top_k: int, extra_terms: set[str],
            app: AppContext) -> list[tuple[int, str, int, int, str]]:
     """回傳 [(score, relative_path, start_line, end_line, body), ...] 取前 top_k。"""
     candidates = []
     for path in iter_source_files(app):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except (UnicodeDecodeError, OSError):
+        blocks = blocks_for(path)
+        if blocks is None:
             continue
         rel = path.relative_to(app.repo_root).as_posix()
-        blocks = (window_blocks(text) if path.suffix.lower() == ".html"
-                  else extract_blocks(text))
         for start, end, signature, body in blocks:
             s = score(query, signature, body, extra_terms)
             if s > 0:

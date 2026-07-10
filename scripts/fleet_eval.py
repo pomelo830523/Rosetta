@@ -195,9 +195,6 @@ def eval_app(app, n_queries, build_missing, do_build, model_override) -> dict:
     # 語意索引:必要時先建
     import semantic_search
     if not semantic_search.available(app) and build_missing:
-        if model_override:
-            import os
-            os.environ["KB_EMBED_MODEL"] = model_override
         print(f"  [{app.name}] --build-missing:建語意索引中…")
         print("   " + semantic_index.build(app, rebuild=True))
     sem_ok = semantic_search.available(app)
@@ -306,6 +303,10 @@ def main():
     model_override = script_args.flag_value("--model")
     build_missing = "--build-missing" in sys.argv
     do_build = "--build" in sys.argv
+
+    if model_override:  # 全域套用一次:所有 AP 用同一 model 量測/建置(不逐 AP 外溢)
+        import os
+        os.environ["KB_EMBED_MODEL"] = model_override
 
     config = kb_config.load_config()
     apps = [a for a in config.apps if not only or a.name.lower() == only.lower()]

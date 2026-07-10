@@ -25,9 +25,17 @@ class TestExtractBlocks:
         signatures = [b[2] for b in code_search.extract_blocks(_JAVA)]
         assert not any(s.startswith("if") for s in signatures)
 
-    def test_oversized_block_dropped(self):
-        big = "void big() {\n" + "x;\n" * 4000 + "}\n"
-        assert code_search.extract_blocks(big) == []
+    def test_oversized_type_decl_dropped(self):
+        # 超大型別宣告(整個 class body)丟棄——不是有用的檢索單位,要的是裡面的方法
+        big_class = "class Big {\n" + "int x;\n" * 4000 + "}\n"
+        sigs = [b[2] for b in code_search.extract_blocks(big_class)]
+        assert not any("class Big" in s for s in sigs)
+
+    def test_oversized_method_kept(self):
+        # 大方法照收(輸出時 truncate_body 截斷顯示),否則 legacy 大方法會搜不到
+        big_method = "void big() {\n" + "x();\n" * 4000 + "}\n"
+        sigs = [b[2] for b in code_search.extract_blocks(big_method)]
+        assert any("big" in s for s in sigs)
 
 
 class TestScore:
@@ -93,3 +101,36 @@ class TestIterAndSearch:
             "<div>訂單清單</div>", encoding="utf-8")
         results = code_search.search("訂單清單", 3, set(), app)
         assert results and results[0][1] == "src/t.html"
+
+    def test_large_method_is_searchable(self, make_app):
+        # A1:大方法(body > MAX_BODY_CHARS)也要能被 grep 找到
+        app = make_app()
+        big = ("class C {\n  void computeShippingFee() {\n"
+               + "    log();\n" * 3000 + "  }\n}\n")
+        (app.repo_root / "src" / "C.java").write_text(big, encoding="utf-8")
+        code_search._block_cache.clear()
+        results = code_search.search("computeShippingFee", 3, set(), app)
+        assert results and results[0][1] == "src/C.java"
+
+
+class TestBlockCache:
+    def test_caches_by_mtime_and_invalidates_on_edit(self, make_app):
+        import os
+        app = make_app()
+        f = app.repo_root / "src" / "A.java"
+        f.write_text("class A { void run() { } }", encoding="utf-8")
+        code_search._block_cache.pop(str(f), None)
+
+        b1 = code_search.blocks_for(f)
+        assert code_search.blocks_for(f) is b1            # mtime 未變 → 命中快取(同物件)
+
+        st = f.stat()
+        f.write_text("class A { void renamed() { } }", encoding="utf-8")
+        os.utime(f, ns=(st.st_mtime_ns + 1_000_000, st.st_mtime_ns + 1_000_000))
+        b2 = code_search.blocks_for(f)
+        assert b2 is not b1                                # mtime 前進 → 重新解析
+        assert any("renamed" in blk[2] for blk in b2)
+
+    def test_missing_file_returns_none(self, make_app):
+        app = make_app()
+        assert code_search.blocks_for(app.repo_root / "src" / "nope.java") is None

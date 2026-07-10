@@ -49,7 +49,18 @@ class TestToYaml:
             "term": "總價", "aliases": [],
             "it_terms": ["TOTAL_PRICE", "House"], "note": "含 ' 引號",
         }])
-        assert "- term: 總價" in out
+        assert "- term: '總價'" in out                # term 引號包起
         assert "it_terms: [TOTAL_PRICE, House]" in out
         assert "note: '含 '' 引號'" in out          # 單引號跳脫
         assert "TODO 人工補使用者口語" in out
+
+    def test_term_with_colon_is_valid_yaml(self):
+        # A3:term 常含「:」(JavaDoc 如「說明:運費」),未跳脫會炸 yaml.safe_load
+        import yaml
+        out = extract_glossary.to_yaml([{
+            "term": "說明:運費規則", "aliases": [],
+            "it_terms": ["SHIPPING_RULE"], "note": "",
+        }])
+        parsed = yaml.safe_load(out)
+        assert parsed[0]["term"] == "說明:運費規則"
+        assert parsed[0]["it_terms"] == ["SHIPPING_RULE"]

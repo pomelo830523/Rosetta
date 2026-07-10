@@ -309,6 +309,10 @@ def _search_semantic(query: str, top_k: int, extra_terms, matched_entries,
                 "請管理員跑 scripts/index_all.py 建索引,或把 engine 改回 auto(自動墊檔 grep)。")
     try:
         hits = semantic_search.search(query, top_k, extra_terms, ctx)
+    except ImportError as exc:  # fastembed 未安裝(選配依賴):優雅降級 grep,不讓 tool 報錯
+        log.warning("engine=semantic 但缺 embedding 套件(%s),改用 grep app=%s;"
+                    "需 semantic 請 pip install -r requirements-semantic.txt", exc, ctx.name)
+        return _search_grep(query, top_k, extra_terms, matched_entries, ctx)
     except ValueError as exc:  # 索引檔不一致(可能重建中),見 semantic_search._load
         log.warning("語意索引載入失敗 app=%s:%s", ctx.name, exc)
         return str(exc)
@@ -379,6 +383,10 @@ def _search_all_apps(query: str) -> str:
                 vec_cache[model] = embed_texts([query], kind="query", model_name=model)[0]
             hits = semantic_search.search(query, 2, extra_terms, ctx,
                                           query_vec=vec_cache[model])
+        except ImportError as exc:  # fastembed 未安裝:discovery 無法進行,回指引(非逐 AP 略過)
+            log.warning("app=all 探索缺 embedding 套件(%s)", exc)
+            return ("跨 AP 探索需要 embedding 套件(未安裝):"
+                    "pip install -r requirements-semantic.txt,或改逐一指定 app 查詢。")
         except ValueError as exc:  # 索引檔不一致(可能重建中)
             parts.append(f"## {ctx.name}:略過({exc})")
             continue

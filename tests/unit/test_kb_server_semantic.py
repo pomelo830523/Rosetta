@@ -80,6 +80,14 @@ class TestSemanticSearchPath:
         out = kb_server.search_code("calc fee", app="sem", include_call_chain=False)
         assert "呼叫鏈:" not in out
 
+    def test_missing_fastembed_falls_back_to_grep(self, graph_config, monkeypatch):
+        # A2:engine=semantic + 索引在,但缺 fastembed → 優雅降級 grep(不報錯)
+        def _raise(*a, **k):
+            raise ImportError("No module named 'fastembed'")
+        monkeypatch.setattr(semantic_search, "search", _raise)
+        out = kb_server.search_code("calc fee", app="sem")
+        assert "engine=grep" in out and "calcFee" in out
+
     def test_all_mode_semantic_app_participates(self, graph_config):
         out = kb_server.search_code("calc fee", app="all")
         assert "## sem" in out and "S::calcFee" in out
