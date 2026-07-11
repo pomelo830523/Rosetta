@@ -118,6 +118,28 @@
       假 codegraph.db);coverage 81%(rosetta 各模組 79~100%,kb_server 84%)
 - [x] selftest 61/61、multi-AP 15/15 無回歸;模板重產
 
+## Phase 15 — 資訊揭露分級(規劃中,未實作;風險記錄 2026-07-10)
+
+**風險**:token = 該台所有 AP 的完整原始碼讀取權(SPEC §7)。`read_source`
+只限制在 repo_root 內,不限 search_dirs/副檔名,可分段讀出整個 repo;
+遮罩僅涵蓋 yml/yaml/properties/.env。fleet 轉介(SPEC §4.10)把 endpoint +
+token 發給外團隊時,等同授予完整原始碼讀取權——與「透過 Claude 問系統邏輯,
+而不是拿到所有程式碼」的產品目標衝突。
+
+規劃的改善路線(依序,前者是後者的前置):
+- [ ] **token 分級**:`KB_AUTH_TOKEN`(團隊內,全功能)之外加 guest token
+      (轉介用):不開 read_source,search_code 只回位置+簽名不含內文
+- [ ] **限流/額度**:per-token 的 read_source 次數與每日回傳字元數上限 + 告警
+      (回答邏輯問題只需幾次讀取,鏡像 repo 需要幾千次——讓外撈不可行且可見)
+- [ ] **read_source 粒度與 denylist**:強制行號範圍(單次 ≤ ~200 行)、
+      擋 `.git/`、`*.pem`、`id_rsa*` 等已知敏感模式、遮罩副檔名擴 `.json`
+- [ ] **server 端摘要層 `explain_logic(question, app)`**(終局形態,使用者
+      真正想做的):server 自帶 LLM 跑檢索工作流(重用現有函式當 tool、
+      instructions 當 system prompt),只回「邏輯說明 + 檔名:行號依據」,
+      原始碼不跨信任邊界;輸出濾網強制引用 ≤ N 行。估 3~5 天。
+      **前置未定:公司內 LLM 來源(API key / 內部 gateway / 網路政策)**,
+      確定後再開工。
+
 ## 決定不做(記錄於 SPEC §6 非目標)
 - 變更歷史查詢(get_change_history):git 歷史量體風險 > 價值,2026-07-06 定案不做
 

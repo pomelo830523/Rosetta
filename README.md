@@ -25,26 +25,7 @@
 使用者問不清楚時,Rosetta 會提供「歧義訊號」讓 Claude **先確認再回答**,
 而不是猜一個方向答錯。以真實案例走一遍:
 
-```mermaid
-sequenceDiagram
-    actor U as 使用者
-    participant C as Claude
-    participant R as Rosetta(唯讀 MCP)
-    participant AP as AP 資產(code / yml / DB)
-
-    U->>C: 竹科悅揚的不含車位單價怎麼算?
-    C->>R: lookup_term(不含車位單價)
-    R-->>C: IT 對照:calculatePricePerPingWithoutParking、HOUSE 表欄位
-    C->>R: search_code(公式)
-    R->>AP: 語意索引 + 讀原始碼
-    R-->>C: 公式原始碼(HouseService.java:321-341)
-    C->>R: query_db_config(HOUSE, filter: NICKNAME=竹科悅揚)
-    R->>AP: SELECT(白名單表 + 參數繫結)
-    R-->>C: 同名資料 4 筆
-    C->>U: 系統裡有 4 筆「竹科悅揚」,你問的是哪一筆?(列選項)
-    U->>C: id 38(8樓 3房)
-    C->>U: 公式 + 該筆現值代入 = 67.37 萬/坪(附檔名:行號與 DB 依據)
-```
+![運作流程:從提問、歧義釐清到附依據作答](docs/diagrams/flow-sequence.drawio.png)
 
 ## 核心能力
 
@@ -78,16 +59,7 @@ sequenceDiagram
 
 檢索分兩個階段:**離線建索引**(排程)與**線上查詢**(< 1 秒)。
 
-```mermaid
-flowchart LR
-    subgraph offline["離線:索引 pipeline(index_all.py,每晚排程)"]
-        direction LR
-        pull["git pull<br>(拉最新 code)"] --> cg["codegraph sync<br>(symbol 目錄+呼叫圖)"]
-        cg --> si["語意索引<br>(NL 訊號→向量)"] --> lint["glossary lint<br>(對照表防腐化)"]
-    end
-    si --> store[(".semantic/&lt;app&gt;/<br>meta.jsonl 名冊<br>vectors.npy 座標<br>state.json 增量依據")]
-    store --> q["線上查詢:問題轉向量<br>→ 內積比距離 → 字面加分 → top-k"]
-```
+![索引 pipeline:離線建索引與線上查詢](docs/diagrams/index-pipeline.drawio.png)
 
 **向量索引是一張「語意地圖」**:embedding model 把每段文字變成一組數字座標
 (e5-large 為 1024 維),意思相近的文字座標會靠近。建索引 = 把每個 symbol
@@ -229,6 +201,10 @@ WARNING 記拒絕事件(白名單/敏感表/filter/路徑穿越/401),ERROR 記 D
 
 ## 注意
 
+- **token = 完整原始碼讀取權**:`read_source` 只限制在各 AP 的 repo_root 內
+  (不限 search_dirs/副檔名),拿到 token 即可分段讀出所有 AP 的整個 repo。
+  發 token 給外團隊(fleet 轉介)前請確認可接受;揭露分級(guest token /
+  server 端摘要層)已規劃未實作(SPEC §7、TODO Phase 15)。
 - 權重/門檻的**現值只在 DB**,程式碼與 migration 看不到。
 - glossary 只維護 zh、只存名詞對應不存公式;編輯後需重跑索引(觸發該 AP 全量)。
 - codegraph 圖缺 DI/反射邊;中文 docstring 亂碼已繞過(註解由 kb 自抽 UTF-8)。

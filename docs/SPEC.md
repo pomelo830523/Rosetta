@@ -19,7 +19,7 @@ server 端強制,不依賴模型自律。
 | 使用者問題模糊、問不清楚 | server 回歧義訊號,Claude 以 KB 候選做選項式釐清(§4.8) |
 | 不知道問題屬於哪個系統 | `app="all"` 跨 AP 探索,確認歸屬後切回單一 AP(§4.9) |
 | 邏輯不只在 code | config tools 即時讀 yml 與 DB 現值(§4.4) |
-| 規模(一隊一台,百萬行以內) | 離線預建索引,查詢期不全掃描(§4.2、§4.5) |
+| 規模百萬行以內 | 離線預建索引,查詢期不全掃描(§4.2、§4.5) |
 
 ## 2. 部署形態
 
@@ -33,114 +33,30 @@ tools 以 `app` 參數選系統,tool 總數固定 7 個。
 
 ## 3. 架構(C4)
 
+> 圖源:`docs/diagrams/`
+
 ### 3.1 Level 1 — System Context
 
-```mermaid
-flowchart LR
-    user["使用者
-    (非工程師,任一語言提問)"]
-    claude["Claude
-    (Claude Code / Desktop)
-    ・語系歸一化(任一語言→zh+en 檢索詞)
-    ・AP 路由・組答案"]
-    kb["NL Query KB —— 本系統
-    一隊一台 multi-AP 唯讀 MCP server
-    只負責「找」與「取」"]
-    ap["團隊的 N 個 AP 資產(唯讀)
-    原始碼 / application*.yml / DB 設定"]
-
-    user -->|"提問(任一語言,講出系統名)"| claude
-    claude -->|"回答 + 依據
-    (檔名:行號 / config key / DB 現值)"| user
-    claude -->|"MCP(remote HTTP,全部唯讀)"| kb
-    kb -->|"唯讀存取(server 端)"| ap
-```
+![C4 L1 System Context](diagrams/c4-l1-context.drawio.png)
 
 ### 3.2 Level 2 — Container
 
-```mermaid
-flowchart TB
-    claude["Claude(入口)"]
+![C4 L2 Container](diagrams/c4-l2-container.drawio.png)
 
-    subgraph kbsys["NL Query KB 系統(一隊一台,同一台伺服器)"]
-        subgraph online["線上:查詢服務(常駐 process,kb_server.py)"]
-            server["kb server
-            Python・MCP・7 個唯讀 tools
-            kb.config.yaml 列 N 個 AP
-            tools 帶 app 參數路由"]
-        end
-
-        subgraph stores["索引檔案(兩個 process 的唯一介面;每 AP 一組)"]
-            vec[("向量索引 .semantic/<app>/")]
-            cg[("codegraph.db × N(SQLite)")]
-        end
-
-        subgraph offline["離線:索引 pipeline(獨立批次 process,index_all.py,掛排程)"]
-            pipe["git pull → codegraph sync → semantic_index
-            → glossary lint;content-hash 增量"]
-        end
-
-        gloss[("glossary/<app>.yaml
-        zh 業務詞 ↔ IT 命名")]
-    end
-
-    subgraph apside["N 個 AP 資產(唯讀)"]
-        code[("原始碼 .java / .ts")]
-        yml[("application*.yml")]
-        db[("DB 設定表
-        白名單・SELECT only・唯讀帳號")]
-    end
-
-    claude -->|"MCP"| server
-    server -->|"唯讀(mtime 熱載)"| vec
-    server -->|"唯讀"| cg
-    server --> gloss
-    server -->|"即時讀(不經索引)"| code
-    server --> yml
-    server --> db
-
-    pipe -->|"寫入(原子換檔)"| vec
-    pipe -->|"寫入"| cg
-    pipe -->|"掃描原始碼"| code
-    gloss -.->|"業務詞反向注入"| pipe
-```
 
 - **server 與 pipeline 互相獨立**:兩個 process、零呼叫關係,唯一介面是索引
-  檔案——pipeline 寫入(tmp + 原子換名),server 以 mtime 偵測熱載(重建後
-  不需重啟)。pipeline 掛掉只影響索引新鮮度,服務不中斷;索引未就緒時
+  檔案。pipeline 寫索引採**原子換檔**——先寫到暫存檔,全部寫完才一口氣改名
+  換上,所以 server 任何時刻讀到的都是完整檔案,不會讀到「寫到一半」的索引;
+  server 端則是 **mtime 熱載**——每次查詢先看索引檔的「最後修改時間」有沒有變,
+  變了就自動重新載入,索引重建後**不需要重啟 server**。
+  pipeline 掛掉只影響索引新鮮度,服務不中斷;索引未就緒時
   `engine: auto` 自動墊檔 grep。
 - 查詢期只做 ANN + SQLite lookup + 即時讀現值,延遲與 repo 行數脫鉤。
 - config tools 與 read_source 即時讀現值/原文,無 staleness。
 
 ### 3.3 Level 3 — Component
 
-```mermaid
-flowchart LR
-    subgraph server["kb server(kb_server.py:tool 註冊・MCP instructions・防目錄穿越・app 路由)"]
-        la["list_apps"]
-        g["glossary.py
-        → lookup_term"]
-        cs["code_search.py
-        → search_code(預設引擎)"]
-        ss["semantic_search.py
-        → search_code(選配:engine=semantic)"]
-        gd["graph_db.py
-        → get_structure"]
-        rs["read_source"]
-        ac["app_config.py
-        → get_app_config"]
-        dc["db_config.py
-        → query_db_config"]
-    end
-    g --> gloss[("glossary/<app>.yaml")]
-    ss --> vec[(".semantic/<app>/")]
-    ss -.->|"同義詞展開 boost"| gloss
-    cs --> code[("原始碼")]
-    gd --> cg[("codegraph.db")]
-    rs --> code
-    ac --> yml[("application*.yml")]
-    dc --> db[("DB 設定表")]
-```
+![C4 L3 Component](diagrams/c4-l3-component.drawio.png)
 
 檢索三層,各司其職:
 
@@ -176,7 +92,7 @@ flowchart LR
 - **model**:預設 `intfloat/multilingual-e5-large`;輕量選項
   `paraphrase-multilingual-MiniLM-L12-v2`(索引快 15 倍,de 原文直查較弱;
   Claude 歸一化後 zh/en 無差)。`embed_model` / `KB_EMBED_MODEL` 切換,換 model 自動全量重建。
-- **向量庫**:numpy 單檔內積(BestHouse < 1ms;百萬行以內 ~10 萬 symbols 仍 < 0.1s,一隊一台夠用);
+- **向量庫**:numpy 單檔內積(BestHouse < 1ms;百萬行以內 ~10 萬 symbols 仍 < 0.1s);
   超出本定位(千萬行/高並發)才換 hnswlib/Qdrant,介面不變。
 - **增量**:codegraph content-hash 判斷變更檔;glossary 或 model 變更自動全量。
 - **混合排序**:ANN 相似度 + 字面 boost 按命中詞數累計
@@ -250,7 +166,7 @@ flowchart LR
 - 與 S4(§4.8)的配合:先整表(或 contains)找出同名多筆 → 使用者選定後,
   以 `eq` + 主鍵欄位精準取回該筆,不再受 50 筆上限影響。
 
-### 4.5 規模矩陣(定位:一隊一台,百萬行以內)
+### 4.5 規模矩陣
 
 | repo 規模 | 語意引擎 | 結構引擎 | 查詢延遲 |
 |---|---|---|---|
@@ -431,10 +347,20 @@ git repo,各團隊自己 PR 自己的區段);新增/移除 fleet 需重啟 serve
   首個 Oracle AP 導入前先驗。
 - HTTP 未設 `KB_AUTH_TOKEN` 時無認證,僅限信任內網;token 注入依 Claude 通道能力,
   必要時走反向代理。
+- **資訊揭露邊界(2026-07-10 記錄):token = 該台所有 AP 的完整原始碼讀取權。**
+  `read_source` 的唯一限制是「該 AP 的 repo_root 之內」——不限 search_dirs、
+  不限副檔名,理論上可分段讀出整個 repo(含 `.git/`、非 yml 的敏感檔;
+  遮罩僅涵蓋 yml/yaml/properties/.env)。存取控制只有一把 token、全有全無,
+  無 per-AP / per-tool 分級。對「一隊一台、服務有 repo 權限的自己人」是合理
+  設計;但 **fleet 轉介(§4.10)把 endpoint + token 發給外團隊 = 授予完整
+  原始碼讀取權**,與「只問系統邏輯、不給整包程式碼」的目標衝突。
+  改善方向已規劃未實作(TODO Phase 15):token 分級(guest 不開 read_source)
+  → 限流/額度 → server 端摘要層 `explain_logic`(server 自帶 LLM 讀 code、
+  只回答案+依據,原始碼不跨信任邊界);後者卡在公司內 LLM 來源未定。
 - codegraph 圖缺 DI/反射邊(§4.3);中文 docstring 在 Windows 為亂碼,註解由 kb 自抽。
 - 絕對路徑:搬移目錄後重跑 `scripts/setup.ps1`。
 
-## 8. 範圍外差距(超出「一隊一台、百萬行以內」定位)
+## 8. 範圍外差距
 
 > 本系統定位在一隊一台、百萬行以內(§4.5);下表為**超出定位**(單台千萬行 /
 > 高並發 / 跨團隊聚合)才需要的替換,屬另一產品形態。完整外推見 docs/ENTERPRISE-GAP.md。

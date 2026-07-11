@@ -26,9 +26,9 @@
 
 - Oracle driver 實測(程式就緒;等首個 Oracle AP 環境)。
 
-## Phase 7 — 規模評估:一隊一台,百萬行以內 ✅(2026-07-05,報告 docs/ENTERPRISE-GAP.md)
+## Phase 7 — 規模評估:百萬行以內 ✅(2026-07-05,報告 docs/ENTERPRISE-GAP.md)
 
-- 定位:一隊一台,單台上限百萬行以內(≈5~10 萬 symbols);不追求單台千萬行。
+- 定位:百萬行以內(≈5~10 萬 symbols);不追求單台千萬行。
 - 結論:**此定位下現行架構基本不用改**——numpy 暴力內積(~40~100ms)、float32(400MB)、
   全檔重寫增量(400MB/秒級)在 10 萬 symbol 皆可接受。唯一摩擦是 e5-large CPU 首建(~9.7h,
   一次性),用 MiniLM(~35min)或借一次 GPU 即解。config/DB 查詢與行數脫鉤,glossary 線性小成本。

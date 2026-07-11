@@ -53,6 +53,9 @@ Claude 就會引導使用者連對方的 Rosetta 續問,或至少給負責團隊
 
 ## 已知限制
 
+- **token = 完整原始碼讀取權**:拿到 token 的人可透過 read_source 分段讀出
+  本 server 管理的所有 AP 的整個 repo(遮罩僅涵蓋 yml/properties/.env)。
+  發 token 給外團隊(fleet 轉介)前請確認可接受;揭露分級規劃中(QUICKSTART 已知限制)。
 - Oracle driver 就緒未實測;首個 Oracle AP 前先驗。
 - 呼叫圖(tree-sitter)缺 DI/反射邊,影響評估請交叉確認。
 - 封閉環境(僅用到 `engine: semantic` 時):embedding model 先在可連網機器建一次索引,
