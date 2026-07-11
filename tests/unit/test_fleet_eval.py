@@ -78,7 +78,7 @@ class TestWriteReport:
         out = tmp_path / "rep.md"
         fleet_eval.write_report([row], out)
         text = out.read_text(encoding="utf-8")
-        assert "全艦隊 rollup" in text and "| x |" in text
+        assert "全艦隊匯總(rollup)" in text and "| x |" in text
 
 
 class TestEvalAppIntegration:

@@ -28,7 +28,7 @@ apps:
         MEMBER: 含家庭成員個人權重(個資),已排除於查詢白名單。
 
   - name: enhancesql
-    description: Oracle SQL Plan 穩定性改善實驗——解決 IN 子句 hard-parse 造成的查詢時間不穩定
+    description: Oracle SQL Plan 穩定性改善實驗——解決 IN 子句每次重新解析(hard-parse)造成的查詢時間不穩定
     repo_root: ../EnhanceSQL
     search_dirs:
       - backend/src

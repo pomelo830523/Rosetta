@@ -208,7 +208,7 @@ claude mcp add --transport http rosetta http://localhost:8600/mcp --header "Auth
 ```
 
 決策門檻(延遲預算、Jaccard、命中率 Δ、命名健康)都在 `scripts\fleet_eval.py` 頂部常數,
-可依團隊需求調整;報告末段的「全艦隊 rollup」會加總「要建索引的 AP」之首建時間與常駐記憶體,
+可依團隊需求調整;報告末段的「全艦隊匯總(rollup)」會加總「要建索引的 AP」之首建時間與常駐記憶體,
 直接告訴你塞不塞得進維護窗與單機預算。
 
 ## 常見陷阱
@@ -236,7 +236,7 @@ claude mcp add --transport http rosetta http://localhost:8600/mcp --header "Auth
   外團隊(fleet 轉介情境)前請確認可接受**。揭露分級(guest token 不開
   read_source / server 端摘要層)已規劃未實作,見 TODO Phase 15 與 SPEC §7。
 - embedding 預設 e5-large;AP 量大、索引時間敏感可改 MiniLM(`embed_model`,
-  索引快 15 倍;經 Claude 歸一化後 zh/en 命中無差)。
+  索引快 15 倍;經 Claude 改寫成 zh+en 檢索詞後命中無差)。
 
 ## 時程參考(50 個 AP)
 

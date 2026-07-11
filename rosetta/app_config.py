@@ -22,19 +22,17 @@ def config_files(app: AppContext) -> list[Path]:
     """該 AP 的 application*.yml / *.yaml 清單,依覆蓋順序排序。"""
     if not app.resources_dir.is_dir():
         return []
-    found = sorted(
-        set(app.resources_dir.glob("application*.yml"))
-        | set(app.resources_dir.glob("application*.yaml")),
-        key=lambda p: p.name.lower(),
-    )
+    found = (set(app.resources_dir.glob("application*.yml"))
+             | set(app.resources_dir.glob("application*.yaml")))
 
+    # 排序鍵含完整檔名:同 stem 不同副檔名(application.yml/.yaml)也有確定順序
     def order(path: Path) -> tuple[int, str]:
         stem = path.stem.lower()
         if stem in _BASE_STEMS:
-            return (0, stem)
+            return (0, path.name.lower())
         if stem in _LAST_STEMS:
-            return (2, stem)
-        return (1, stem)
+            return (2, path.name.lower())
+        return (1, path.name.lower())
 
     return sorted(found, key=order)
 

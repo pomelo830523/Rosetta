@@ -1,5 +1,5 @@
 """艦隊級引擎決策實驗(Tier 1+2):逐 AP 量規模/延遲/建置成本/引擎分歧,
-   套決策規則產出「每 AP 用 grep 還是要建語意索引」的暫定判定 + 全艦隊 rollup。
+   套決策規則產出「每 AP 用 grep 還是要建語意索引」的暫定判定 + 全艦隊匯總(rollup)。
 
 設計與門檻見 eval/FLEET-EVAL.md。品質命中率(Tier 3)用 scripts/eval_ablation.py。
 
@@ -281,7 +281,7 @@ def write_report(rows: list[dict], out: Path) -> None:
     index_rows = semantic_rows + tier3   # 這些「可能」要建索引,取成本上界
     tot_build = sum(r["build_sec"] for r in index_rows)
     tot_mem = sum(r["mem_mb"] for r in index_rows)
-    lines.append("## 全艦隊 rollup")
+    lines.append("## 全艦隊匯總(rollup)")
     lines.append(f"- 暫定 **grep**(零建置/零常駐):{len(grep_rows)} 個 AP")
     lines.append(f"- 判定 **要語意索引**(延遲驅動或品質):{len(semantic_rows)} 個 AP")
     lines.append(f"- 需人工標註跑 Tier 3(eval_ablation.py)才能定奪:{len(tier3)} 個 AP —— "

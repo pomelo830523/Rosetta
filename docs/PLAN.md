@@ -122,6 +122,17 @@
   全部走 tmp 假資產與 eval/fixture-app),coverage 81%(rosetta + scripts);
   selftest 61/61、multi-AP 15/15 無回歸。細項見 TODO.md Phase 14。
 
+## fleet 跨團隊轉介 ✅(2026-07-10,SPEC §4.10)
+
+- `kb.config.yaml` 選填 `fleet:` 目錄:其他團隊的系統與聯絡窗口,**對方不需裝
+  Rosetta 就能列入**(有 endpoint 引導連對方 Rosetta 續問,沒有的純轉介)。
+- 三掛載點,不加新 tool:list_apps 轉介區段、檢索空手時的轉介訊號、
+  instructions #8;fleet 與本機 app 撞名/跨條目重複名 fail fast。
+- 同輪 review 修正:/health 純 grep 部署缺 numpy 會 500、設定清單非 mapping
+  項目改回明確 ValueError;單元測試 220 項(coverage 79%)。
+- 資訊揭露風險記錄(SPEC §7、TODO Phase 15):token = 該台所有 AP 的完整
+  原始碼讀取權,fleet 轉介發 token 前須知情;揭露分級規劃中(卡公司內 LLM 來源)。
+
 ## 風險
 
 | 風險 | 緩解 |
@@ -130,5 +141,5 @@
 | AP 路由錯誤 | description 寫使用者聽得懂的話;路由抽查 |
 | 過度反問(問題清楚也被反問,使用者嫌煩) | instructions 限「最多問一次、清楚就不問」;S2 門檻以清晰題調校;eval 驗誤觸發 ≤ 1/10 |
 | 呼叫圖缺 DI/反射邊(可用但不可信) | 回傳已標註;影響評估交叉確認;企業版換 SCIP/Spoon |
-| 索引 staleness | 排程增量;config/DB/read_source 即時讀 |
+| 索引過舊(落後於程式碼) | 排程增量;config/DB/read_source 即時讀 |
 | HTTP 認證依賴通道能力 | token 於反向代理注入,或維持內網信任 |

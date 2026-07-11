@@ -140,6 +140,7 @@ def truncate_body(body: str) -> str:
 # 檔案切塊快取:str(path) → (mtime_ns, blocks)。grep 是預設引擎、每次查詢都會走訪
 # 全部檔案,快取避免「檔案沒變卻每次重讀重解析」;以 mtime 失效,故仍永不 drift。
 _block_cache: dict[str, tuple[int, list[tuple[int, int, str, str]]]] = {}
+_CACHE_MAX_FILES = 20000  # 防呆上限:刪除/更名的檔案項不會被主動清,累積到上限即整個重建
 
 
 def blocks_for(path) -> list[tuple[int, int, str, str]] | None:
@@ -159,6 +160,8 @@ def blocks_for(path) -> list[tuple[int, int, str, str]] | None:
         return None
     blocks = (window_blocks(text) if path.suffix.lower() == ".html"
               else extract_blocks(text))
+    if key not in _block_cache and len(_block_cache) >= _CACHE_MAX_FILES:
+        _block_cache.clear()  # 代價 = 重掃一輪,換取殘留項不無限累積
     _block_cache[key] = (mtime, blocks)
     return blocks
 

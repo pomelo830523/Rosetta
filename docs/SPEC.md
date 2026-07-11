@@ -9,7 +9,7 @@
 程式碼、AP config、DB 現值後回答,並附依據(檔名:行號 / config key / DB 現值)。
 
 **分工:kb server 只負責「找」與「取」(全部唯讀);Claude 負責「懂」與「譯」**
-(語系歸一化、AP 路由、讀 code 組答案)。安全機制(白名單、遮罩、唯讀)在
+(把任何語言的提問改寫成 zh+en 檢索詞、AP 路由、讀 code 組答案)。安全機制(白名單、遮罩、唯讀)在
 server 端強制,不依賴模型自律。
 
 | 問題 | 解法 |
@@ -51,8 +51,9 @@ tools 以 `app` 參數選系統,tool 總數固定 7 個。
   變了就自動重新載入,索引重建後**不需要重啟 server**。
   pipeline 掛掉只影響索引新鮮度,服務不中斷;索引未就緒時
   `engine: auto` 自動墊檔 grep。
-- 查詢期只做 ANN + SQLite lookup + 即時讀現值,延遲與 repo 行數脫鉤。
-- config tools 與 read_source 即時讀現值/原文,無 staleness。
+- 查詢期只做向量相似度比對(內積)+ codegraph 查表 + 即時讀現值,延遲與 repo 行數脫鉤。
+- config tools 與 read_source 即時讀現值/原文——讀到的永遠是當下版本,
+  沒有「索引比程式碼舊」的時間差。
 
 ### 3.3 Level 3 — Component
 
@@ -91,18 +92,19 @@ tools 以 `app` 參數選系統,tool 總數固定 7 個。
   (kb 自行 UTF-8 抽取)+ class 名 + annotation + glossary 反向注入。
 - **model**:預設 `intfloat/multilingual-e5-large`;輕量選項
   `paraphrase-multilingual-MiniLM-L12-v2`(索引快 15 倍,de 原文直查較弱;
-  Claude 歸一化後 zh/en 無差)。`embed_model` / `KB_EMBED_MODEL` 切換,換 model 自動全量重建。
+  經 Claude 改寫檢索詞後 zh/en 無差)。`embed_model` / `KB_EMBED_MODEL` 切換,換 model 自動全量重建。
 - **向量庫**:numpy 單檔內積(BestHouse < 1ms;百萬行以內 ~10 萬 symbols 仍 < 0.1s);
   超出本定位(千萬行/高並發)才換 hnswlib/Qdrant,介面不變。
 - **增量**:codegraph content-hash 判斷變更檔;glossary 或 model 變更自動全量。
-- **混合排序**:ANN 相似度 + 字面 boost 按命中詞數累計
+- **混合排序**:向量相似度(內積)+ 字面加分按命中詞數累計
   (親打詞每詞 +0.08 封頂 0.24、glossary 展開詞每詞 +0.04 封頂 0.20)。
 - **預設引擎 = grep(2026-07-09 起,依 ablation 定案)**:實測顯示
   **當 code 命名尚可、又有維護 glossary 時,語意索引相對 grep+glossary 幾乎零檢索增益**
   ——besthouse 10 題、top-3、同 glossary:zh+en semantic 18/20 vs grep 17/20,
   且該 1 題差異落在非 code 題(datasource,正解本應走 get_app_config)。原因:grep 引擎
-  本身已做「英文 identifier + 中文 bigram 註解 + glossary 展開」三合一,涵蓋多數場景;
-  且查詢前 Claude 已把口語歸一化為 zh+en、並經 lookup_term 展開成 IT 詞。
+  本身已做「英文 identifier + 中文註解逐兩字比對(bigram)+ glossary 展開」三合一,
+  涵蓋多數場景;且查詢前 Claude 已把口語改寫成 zh+en 檢索詞、並經 lookup_term
+  展開成 IT 詞。
   完整數據見 `eval/ABLATION.md`。
 - **semantic 保留為選配加速器**,判準三選一:(a) repo 大到查詢期 grep 全掃描會慢
   (現行 grep 為逐檔即時解析,大型 repo 才成瓶頸);(b) 命名極差且 glossary 補不動
@@ -331,7 +333,7 @@ git repo,各團隊自己 PR 自己的區段);新增/移除 fleet 需重啟 serve
 
 ## 6. 非目標
 
-- 不做 Web UI、不做寫入、不做權限控管/多使用者、不做即時索引(分鐘級 staleness 可接受)。
+- 不做 Web UI、不做寫入、不做權限控管/多使用者、不做即時索引(索引落後分鐘級可接受)。
 - 不做變更歷史查詢(git log 包成 tool):「何時改、為何改」的價值不敵
   git 歷史量體灌爆對話的風險,評估後決定不做(2026-07-06)。
 - 不做 E2E 自動驗收腳本(曾有 scripts/eval_e2e.py):headless claude 逐題實測

@@ -134,3 +134,14 @@ class TestBlockCache:
     def test_missing_file_returns_none(self, make_app):
         app = make_app()
         assert code_search.blocks_for(app.repo_root / "src" / "nope.java") is None
+
+    def test_cache_capped_rebuilds_when_full(self, make_app, monkeypatch):
+        # 刪除/更名的檔案項不會被主動清:累積到上限即整個重建,不無限成長
+        app = make_app()
+        monkeypatch.setattr(code_search, "_CACHE_MAX_FILES", 2)
+        monkeypatch.setattr(code_search, "_block_cache", {})
+        for i in range(3):
+            f = app.repo_root / "src" / f"F{i}.java"
+            f.write_text("class F { void m() { } }", encoding="utf-8")
+            code_search.blocks_for(f)
+        assert len(code_search._block_cache) <= 2

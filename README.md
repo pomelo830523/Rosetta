@@ -18,7 +18,7 @@
 | 設定現值 | 「評分權重現在是多少?」 | DB 設定表**即時查詢**(migration 裡的是舊值) |
 | 系統設定 | 「連的是哪個資料庫?」 | application*.yml(密碼等敏感值自動遮罩) |
 | 影響範圍 | 「這個公式被誰使用?」 | codegraph 呼叫圖(callers/callees) |
-| 跨系統探索 | 「哪個系統有產生條碼?」 | 跨 AP 聯合查詢(discovery) |
+| 跨系統探索 | 「哪個系統有產生條碼?」 | 跨 AP 聯合查詢(discovery 探索模式) |
 
 ## 運作流程
 
@@ -32,7 +32,7 @@
 1. **業務用語對照(glossary)**:「權重」「被刷掉」這類口語 → 精確的
    class/欄位/config key,每 AP 一份 YAML,缺詞再補;
    防腐化 lint 自動檢測 rename 造成的失效條目。
-2. **多語檢索**:預設 grep 引擎(英文 identifier + 中文 bigram 註解 + glossary 展開三合一);
+2. **多語檢索**:預設 grep 引擎(英文 identifier + 中文註解逐兩字比對(bigram)+ glossary 展開三合一);
    語意 embedding 為選配加速器,大型 repo 或命名極差時再開。實測:命名尚可且有維護
    glossary 時,語意索引相對 grep 幾乎零增益(`eval/ABLATION.md`)。
 3. **呼叫鏈結構**:codegraph 圖索引,回答「被誰用/用了誰/改了影響誰」。
@@ -90,7 +90,7 @@ glossary 對照(⑤),照樣命中;五種全缺才會在語意檢索中隱形。
    (`calculatePricePerPingWithoutParking` 命中 5 詞,壓過只沾 `price` 的 `totalPrice`)
 5. 回傳 top-k 的檔名:行號 + 原始碼 + 一層呼叫鏈
 
-**增量**:排程以 codegraph 的 content-hash 比對,只重嵌有變更的檔案——
+**增量**:排程以 codegraph 的檔案內容指紋(content-hash)比對,只重嵌有變更的檔案——
 AP 沒 commit 時幾乎零成本;換 model 或改 glossary 自動全量重建(座標系變了,
 整張地圖重畫)。
 
@@ -167,6 +167,7 @@ tests/                 selftest.py(功能驗證)、selftest_multiapp.py(multi-AP
 config/                kb.config.yaml + glossary/<app>.yaml(團隊資產,進版控)
 eval/                  題庫、驗收基準、fixture app、FLEET-EVAL 協定與 ablation 報告
 docs/                  SPEC / QUICKSTART / PLAN / TODO / ENTERPRISE-GAP
+docs/diagrams/         架構圖(*.drawio.png:PNG 內嵌 draw.io XML,可直接編輯)
 ```
 
 ## 常用操作

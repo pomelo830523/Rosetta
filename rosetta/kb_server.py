@@ -419,7 +419,7 @@ def _search_grep(query: str, top_k: int, extra_terms, matched_entries,
         return ("找不到相關程式碼。可先用 lookup_term 確認業務用語的 IT 對照,"
                 "再以 IT 詞重查。" + _glossary_domain_hint(ctx) + _fleet_hint(query))
     log.info("search app=%s engine=grep(墊檔)hits=%d", ctx.name, len(results))
-    parts = [f"(app={ctx.name},engine=grep,全掃描 fallback)"]
+    parts = [f"(app={ctx.name},engine=grep,即時全掃描、未用索引)"]
     if matched_entries:
         hits = "、".join(f"{e.term}→{'/'.join(e.it_terms[:3])}" for e in matched_entries)
         parts.append(f"(glossary 展開:{hits})")
